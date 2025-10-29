@@ -4,15 +4,22 @@ struct CameraInfo {
   float4x4 camera_to_world;
 };
 
+struct Material {
+  float3 base_color;
+  float roughness;
+  float metallic;
+  float padding[3];
+};
+
 RaytracingAccelerationStructure as : register(t0, space0);
 RWTexture2D<float4> output : register(u0, space1);
 ConstantBuffer<CameraInfo> camera_info : register(b0, space2);
+StructuredBuffer<Material> materials : register(t0, space3);
 
 struct RayPayload {
   float3 color;
   bool hit;
-  float a;
-  float3 b;
+  uint instance_id;
 };
 
 [shader("raygeneration")] void RayGenMain() {
@@ -29,36 +36,44 @@ struct RayPayload {
 
   RayPayload payload;
   payload.color = float3(0, 0, 0);
+  payload.hit = false;
+  payload.instance_id = 0;
 
   RayDesc ray;
   ray.Origin = origin.xyz;
-  ray.Direction = direction.xyz;
+  ray.Direction = normalize(direction.xyz);
   ray.TMin = t_min;
   ray.TMax = t_max;
 
-  payload.hit = false;
-  payload.a = 1.0;
-  payload.b = float3(0, 0, 0);
-  TraceRay(as, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, 0xFF, 0, 1, 0, ray, payload);
-
-  payload.a = -1.0;
-  payload.b = float3(1, 1, 1);
-  TraceRay(as, RAY_FLAG_CULL_FRONT_FACING_TRIANGLES, 0xFF, 0, 1, 0, ray, payload);
+  TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
 
   output[DispatchRaysIndex().xy] = float4(payload.color, 1);
 }
 
 [shader("miss")] void MissMain(inout RayPayload payload) {
-  if (!payload.hit) {
-    payload.color = float3(0.8, 0.7, 0.6);
-  }
+  // Sky gradient
+  float t = 0.5 * (normalize(WorldRayDirection()).y + 1.0);
+  payload.color = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
+  payload.hit = false;
 }
 
 [shader("closesthit")] void ClosestHitMain(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr) {
-  float3 barycentrics =
-      float3(1.0 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
-  if (!payload.hit) {
-    payload.color = payload.a * barycentrics + payload.b;
-    payload.hit = true;
-  }
+  payload.hit = true;
+  
+  // Get material index from instance
+  uint material_idx = InstanceID();
+  payload.instance_id = material_idx;
+  
+  // Load material
+  Material mat = materials[material_idx];
+  
+  // Simple diffuse lighting
+  float3 world_normal = normalize(float3(0, 1, 0)); // Placeholder, should compute from geometry
+  float3 light_dir = normalize(float3(1, 1, 1));
+  float ndotl = max(0.0, dot(world_normal, light_dir));
+  
+  // Apply material color
+  float3 diffuse = mat.base_color * (0.3 + 0.7 * ndotl);
+  
+  payload.color = diffuse;
 }

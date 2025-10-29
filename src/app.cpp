@@ -1,4 +1,6 @@
 #include "app.h"
+#include "Material.h"
+#include "Entity.h"
 
 #include "glm/gtc/matrix_transform.hpp"
 
@@ -124,7 +126,7 @@ void Application::OnInit() {
     alive_ = true;
     core_->CreateWindowObject(1280, 720,
         ((core_->API() == grassland::graphics::BACKEND_API_VULKAN) ? "[Vulkan]" : "[D3D12]") +
-        std::string(" Graphics Hello Ray Tracing"),
+        std::string(" Ray Tracing Scene Demo"),
         &window_);
 
     // Register the key event handler
@@ -143,13 +145,53 @@ void Application::OnInit() {
     // Hide and "grab" the cursor
     glfwSetInputMode(window_->GLFWWindow(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-    std::vector<glm::vec3> vertices = { {-1.0f, -1.0f, 0.0f}, {1.0f, -1.0f, 0.0f}, {0.0f, 1.0f, 0.0f} };
-    std::vector<uint32_t> indices = { 0, 1, 2 };
+    // Create scene
+    scene_ = std::make_unique<Scene>(core_.get());
 
-    core_->CreateBuffer(vertices.size() * sizeof(glm::vec3), grassland::graphics::BUFFER_TYPE_DYNAMIC, &vertex_buffer_);
-    core_->CreateBuffer(indices.size() * sizeof(uint32_t), grassland::graphics::BUFFER_TYPE_DYNAMIC, &index_buffer_);
-    vertex_buffer_->UploadData(vertices.data(), vertices.size() * sizeof(glm::vec3));
-    index_buffer_->UploadData(indices.data(), indices.size() * sizeof(uint32_t));
+    // Add entities to the scene
+    // Ground plane - a cube scaled to be flat
+    {
+        auto ground = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(glm::vec3(0.8f, 0.8f, 0.8f), 0.8f, 0.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f)), 
+                      glm::vec3(10.0f, 0.1f, 10.0f))
+        );
+        scene_->AddEntity(ground);
+    }
+
+    // Red sphere (using octahedron as sphere substitute)
+    {
+        auto red_sphere = std::make_shared<Entity>(
+            "meshes/octahedron.obj",
+            Material(glm::vec3(1.0f, 0.2f, 0.2f), 0.3f, 0.0f),
+            glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f, 0.5f, 0.0f))
+        );
+        scene_->AddEntity(red_sphere);
+    }
+
+    // Green metallic sphere
+    {
+        auto green_sphere = std::make_shared<Entity>(
+            "meshes/octahedron.obj",
+            Material(glm::vec3(0.2f, 1.0f, 0.2f), 0.2f, 0.8f),
+            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f))
+        );
+        scene_->AddEntity(green_sphere);
+    }
+
+    // Blue cube
+    {
+        auto blue_cube = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(glm::vec3(0.2f, 0.2f, 1.0f), 0.5f, 0.0f),
+            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, 0.0f))
+        );
+        scene_->AddEntity(blue_cube);
+    }
+
+    // Build acceleration structures
+    scene_->BuildAccelerationStructures();
 
     core_->CreateBuffer(sizeof(CameraObject), grassland::graphics::BUFFER_TYPE_DYNAMIC, &camera_object_buffer_);
 
@@ -189,14 +231,11 @@ void Application::OnInit() {
     core_->CreateShader(GetShaderCode("shaders/shader.hlsl"), "ClosestHitMain", "lib_6_3", &closest_hit_shader_);
     grassland::LogInfo("Shader compiled successfully");
 
-    core_->CreateBottomLevelAccelerationStructure(vertex_buffer_.get(), index_buffer_.get(), sizeof(glm::vec3), &blas_);
-    core_->CreateTopLevelAccelerationStructure(
-        { blas_->MakeInstance(glm::mat4{1.0f}, 0, 0xFF, 0, grassland::graphics::RAYTRACING_INSTANCE_FLAG_NONE) }, &tlas_);
-
     core_->CreateRayTracingProgram(raygen_shader_.get(), miss_shader_.get(), closest_hit_shader_.get(), &program_);
-    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_ACCELERATION_STRUCTURE, 1);
-    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);
-    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_ACCELERATION_STRUCTURE, 1);  // space0
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space1
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space2
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space3 - materials
     program_->Finalize();
 }
 
@@ -206,13 +245,10 @@ void Application::OnClose() {
     miss_shader_.reset();
     closest_hit_shader_.reset();
 
-    blas_.reset();
-    tlas_.reset();
+    scene_.reset();
 
     color_image_.reset();
     camera_object_buffer_.reset();
-    index_buffer_.reset();
-    vertex_buffer_.reset();
 }
 
 void Application::OnUpdate() {
@@ -234,13 +270,9 @@ void Application::OnUpdate() {
         camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
 
-        // Original triangle rotation logic
-        static float theta = 0.0f;
-        theta += glm::radians(0.1f);
-
-        tlas_->UpdateInstances(
-            std::vector{ blas_->MakeInstance(glm::rotate(glm::mat4{1.0f}, theta, glm::vec3{0.0f, 1.0f, 0.0f}), 0, 0xFF, 0,
-                                            grassland::graphics::RAYTRACING_INSTANCE_FLAG_NONE) });
+        // Optional: Animate entities
+        // For now, entities are static. You can update their transforms and call:
+        // scene_->UpdateInstances();
     }
 }
 
@@ -249,9 +281,10 @@ void Application::OnRender() {
     core_->CreateCommandContext(&command_context);
     command_context->CmdClearImage(color_image_.get(), { {0.6, 0.7, 0.8, 1.0} });
     command_context->CmdBindRayTracingProgram(program_.get());
-    command_context->CmdBindResources(0, tlas_.get(), grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(0, scene_->GetTLAS(), grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(1, { color_image_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(2, { camera_object_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(3, { scene_->GetMaterialsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdDispatchRays(window_->GetWidth(), window_->GetHeight(), 1);
     command_context->CmdPresent(window_.get(), color_image_.get());
     core_->SubmitCommandContext(command_context.get());
