@@ -1,6 +1,14 @@
 # ShortMarch
 
-add cmake tool chain to vcpkd.cmake
+## Description
+
+This is the official repository for the Advanced Computer Graphics instructed by Li Yi at IIIS, Tsinghua University. This project contains a simple framework for GPU rendering downgraded from [LongMarch](https://github.com/LazyJazzDev/LongMarch/tree/main).
+
+## Honor Code
+
+You are expected to uphold the principles of academic integrity and honesty in all your work related to this repository. Any form of academic dishonesty, including but not limited to plagiarism, cheating, or unauthorized collaboration, is strictly prohibited and may result in severe consequences. Any direct copy and paste of code (even from the `external/` code this repository referred) will be considered as cheating. You are free to read any reference materials, including books, articles, and online resources, to enhance your understanding of the subject matter.
+
+By accessing and using this repository, you acknowledge that you have read, understood, and agreed to abide by this Honor Code. If you do not agree to these terms, you must refrain from using this repository.
 
 ## How to build
 
