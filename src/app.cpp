@@ -5,6 +5,14 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "imgui.h"
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <filesystem>
+
 namespace {
 #include "built_in_shaders.inl"
 }
@@ -24,16 +32,44 @@ Application::~Application() {
 // Event handler for keyboard input
 // Poll keyboard state directly to ensure it works even when ImGui is active
 void Application::ProcessInput() {
-    // Only process input if camera is enabled
-    if (!camera_enabled_) {
-        return;
-    }
-
     // Get GLFW window handle
     GLFWwindow* glfw_window = window_->GLFWWindow();
     
     // Check if this window has focus - only process input for focused window
     if (glfwGetWindowAttrib(glfw_window, GLFW_FOCUSED) == GLFW_FALSE) {
+        return;
+    }
+
+    // Tab key to toggle UI visibility (only in inspection mode)
+    if (!camera_enabled_) {
+        ui_hidden_ = (glfwGetKey(glfw_window, GLFW_KEY_TAB) == GLFW_PRESS);
+    }
+    
+    // Ctrl+S to save accumulated output (only in inspection mode)
+    static bool ctrl_s_was_pressed = false;
+    bool ctrl_pressed = (glfwGetKey(glfw_window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS || 
+                        glfwGetKey(glfw_window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+    bool s_pressed = (glfwGetKey(glfw_window, GLFW_KEY_S) == GLFW_PRESS);
+    bool ctrl_s_pressed = ctrl_pressed && s_pressed;
+    
+    if (ctrl_s_pressed && !ctrl_s_was_pressed && !camera_enabled_) {
+        // Generate filename with timestamp
+        auto now = std::chrono::system_clock::now();
+        auto time_t = std::chrono::system_clock::to_time_t(now);
+        std::tm tm;
+        localtime_s(&tm, &time_t);
+        
+        std::ostringstream filename;
+        filename << "screenshot_" 
+                 << std::put_time(&tm, "%Y%m%d_%H%M%S")
+                 << ".png";
+        
+        SaveAccumulatedOutput(filename.str());
+    }
+    ctrl_s_was_pressed = ctrl_s_pressed;
+    
+    // Only process camera movement if camera is enabled
+    if (!camera_enabled_) {
         return;
     }
 
@@ -173,7 +209,9 @@ void Application::OnInit() {
     // Initialize camera as DISABLED to avoid cursor conflicts with multiple windows
     camera_enabled_ = false;
     last_camera_enabled_ = false;
+    ui_hidden_ = false;
     hovered_entity_id_ = -1; // No entity hovered initially
+    hovered_pixel_color_ = glm::vec4(0.0f); // No pixel color initially
     selected_entity_id_ = -1; // No entity selected initially
     mouse_x_ = 0.0;
     mouse_y_ = 0.0;
@@ -314,6 +352,7 @@ void Application::UpdateHoveredEntity() {
     // Only detect hover when camera is disabled (cursor visible)
     if (camera_enabled_) {
         hovered_entity_id_ = -1;
+        hovered_pixel_color_ = glm::vec4(0.0f);
         return;
     }
 
@@ -326,21 +365,29 @@ void Application::UpdateHoveredEntity() {
     // Check bounds
     if (x < 0 || x >= width || y < 0 || y >= height) {
         hovered_entity_id_ = -1;
+        hovered_pixel_color_ = glm::vec4(0.0f);
         return;
     }
 
+    grassland::graphics::Offset2D offset{ x, y };
+    grassland::graphics::Extent2D extent{ 1, 1 };
+    
     // Read entity ID from the ID buffer at the mouse position
     // The entity_id_image_ stores the entity index (-1 for no entity)
     int32_t entity_id = -1;
+    entity_id_image_->DownloadData(&entity_id, offset, extent);
+    hovered_entity_id_ = entity_id;
     
-    // Download the single pixel value from the entity ID buffer
+    // Read pixel color from the output image (accumulated or immediate)
+    // Use film output if accumulating, otherwise use direct color output
+    float pixel_rgba[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    grassland::graphics::Image* sample_image = film_->GetOutputImage();
+    
     // Note: This is a synchronous read which may cause a GPU stall
     // For better performance, consider using a readback buffer with a frame delay
-    grassland::graphics::Offset2D offset{ x, y };
-    grassland::graphics::Extent2D extent{ 1, 1 };
-    entity_id_image_->DownloadData(&entity_id, offset, extent);
+    sample_image->DownloadData(pixel_rgba, offset, extent);
     
-    hovered_entity_id_ = entity_id;
+    hovered_pixel_color_ = glm::vec4(pixel_rgba[0], pixel_rgba[1], pixel_rgba[2], pixel_rgba[3]);
     
     // Hover state is shown in the UI panels, no logging needed
 }
@@ -423,9 +470,53 @@ void Application::ApplyHoverHighlight(grassland::graphics::Image* image) {
     image->UploadData(image_data.data());
 }
 
+void Application::SaveAccumulatedOutput(const std::string& filename) {
+    // Save the accumulated output image to a PNG file (without hover highlighting)
+    int width = window_->GetWidth();
+    int height = window_->GetHeight();
+    int sample_count = film_->GetSampleCount();
+    
+    if (sample_count == 0) {
+        grassland::LogWarning("Cannot save screenshot: no samples accumulated yet");
+        return;
+    }
+    
+    // Download accumulated color directly from film buffers (not the output image which may have highlights)
+    std::vector<float> accumulated_colors(width * height * 4);
+    film_->GetAccumulatedColorImage()->DownloadData(accumulated_colors.data());
+    
+    // Convert from accumulated sum to averaged color, then to 8-bit
+    std::vector<uint8_t> byte_data(width * height * 4);
+    for (size_t i = 0; i < width * height; i++) {
+        // Average the accumulated color by dividing by sample count
+        float r = accumulated_colors[i * 4 + 0] / static_cast<float>(sample_count);
+        float g = accumulated_colors[i * 4 + 1] / static_cast<float>(sample_count);
+        float b = accumulated_colors[i * 4 + 2] / static_cast<float>(sample_count);
+        float a = accumulated_colors[i * 4 + 3] / static_cast<float>(sample_count);
+        
+        // Clamp to [0, 1] and convert to 8-bit
+        byte_data[i * 4 + 0] = static_cast<uint8_t>(std::max(0.0f, std::min(1.0f, r)) * 255.0f);
+        byte_data[i * 4 + 1] = static_cast<uint8_t>(std::max(0.0f, std::min(1.0f, g)) * 255.0f);
+        byte_data[i * 4 + 2] = static_cast<uint8_t>(std::max(0.0f, std::min(1.0f, b)) * 255.0f);
+        byte_data[i * 4 + 3] = static_cast<uint8_t>(std::max(0.0f, std::min(1.0f, a)) * 255.0f);
+    }
+    
+    // Write PNG file
+    int result = stbi_write_png(filename.c_str(), width, height, 4, byte_data.data(), width * 4);
+    
+    if (result) {
+        // Get absolute path for logging
+        std::filesystem::path abs_path = std::filesystem::absolute(filename);
+        grassland::LogInfo("Screenshot saved: {} ({}x{}, {} samples)", 
+                          abs_path.string(), width, height, sample_count);
+    } else {
+        grassland::LogError("Failed to save screenshot: {}", filename);
+    }
+}
+
 void Application::RenderInfoOverlay() {
-    // Only show overlay when camera is disabled
-    if (camera_enabled_) {
+    // Only show overlay when camera is disabled and UI is not hidden
+    if (camera_enabled_ || ui_hidden_) {
         return;
     }
 
@@ -472,6 +563,30 @@ void Application::RenderInfoOverlay() {
         ImGui::Text("Selected: None");
     }
     
+    ImGui::Spacing();
+    
+    // Show hovered pixel information
+    ImGui::SeparatorText("Pixel Inspector");
+    ImGui::Text("Mouse Position: (%d, %d)", (int)mouse_x_, (int)mouse_y_);
+    
+    // Display color value with a color preview box
+    ImGui::Text("Pixel Color:");
+    ImGui::SameLine();
+    ImGui::ColorButton("##pixel_color_preview", 
+                       ImVec4(hovered_pixel_color_.r, hovered_pixel_color_.g, hovered_pixel_color_.b, 1.0f),
+                       ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
+                       ImVec2(40, 20));
+    
+    ImGui::Text("  R: %.3f", hovered_pixel_color_.r);
+    ImGui::Text("  G: %.3f", hovered_pixel_color_.g);
+    ImGui::Text("  B: %.3f", hovered_pixel_color_.b);
+    
+    // Show as 8-bit values too (common for texture work)
+    ImGui::Text("  RGB (8-bit): (%d, %d, %d)", 
+                (int)(hovered_pixel_color_.r * 255.0f),
+                (int)(hovered_pixel_color_.g * 255.0f),
+                (int)(hovered_pixel_color_.b * 255.0f));
+    
     // Calculate total triangles
     size_t total_triangles = 0;
     for (const auto& entity : scene_->GetEntities()) {
@@ -512,13 +627,16 @@ void Application::RenderInfoOverlay() {
     ImGui::Text("W/A/S/D - Move camera");
     ImGui::Text("Space/Shift - Up/Down");
     ImGui::Text("Mouse - Look around");
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.5f, 1.0f), "Hold Tab to hide UI");
+    ImGui::TextColored(ImVec4(0.5f, 1.0f, 1.0f, 1.0f), "Ctrl+S to save screenshot");
 
     ImGui::End();
 }
 
 void Application::RenderEntityPanel() {
-    // Only show entity panel when camera is disabled
-    if (camera_enabled_) {
+    // Only show entity panel when camera is disabled and UI is not hidden
+    if (camera_enabled_ || ui_hidden_) {
         return;
     }
 

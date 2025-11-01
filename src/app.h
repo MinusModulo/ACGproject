@@ -71,6 +71,7 @@ private:
     void OnMouseButton(int button, int action, int mods, double xpos, double ypos); // Mouse button event handler
     void RenderInfoOverlay(); // Render the info overlay
     void ApplyHoverHighlight(grassland::graphics::Image* image); // Apply hover highlighting as post-process
+    void SaveAccumulatedOutput(const std::string& filename); // Save accumulated output to PNG file
 
     float yaw_;
     float pitch_;
@@ -80,11 +81,13 @@ private:
     bool first_mouse_; // Prevents camera jump on first mouse input
     bool camera_enabled_; // Whether camera movement is enabled
     bool last_camera_enabled_; // Track camera state changes to reset accumulation
+    bool ui_hidden_; // Whether UI panels are hidden (Tab key toggle)
     
     // Mouse hovering
     double mouse_x_;
     double mouse_y_;
     int hovered_entity_id_; // -1 if no entity hovered
+    glm::vec4 hovered_pixel_color_; // Color value at hovered pixel
     
     // Entity selection
     int selected_entity_id_; // -1 if no entity selected
