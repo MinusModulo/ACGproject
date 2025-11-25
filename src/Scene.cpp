@@ -18,6 +18,8 @@ void Scene::AddEntity(std::shared_ptr<Entity> entity) {
     entity->BuildBLAS(core_);
     
     entities_.push_back(entity);
+    vertex_buffers_.push_back(entity->GetVertexBuffer());
+    index_buffers_.push_back(entity->GetIndexBuffer());
     grassland::LogInfo("Added entity to scene (total: {})", entities_.size());
 }
 
@@ -25,6 +27,8 @@ void Scene::Clear() {
     entities_.clear();
     tlas_.reset();
     materials_buffer_.reset();
+    vertex_buffers_.clear();
+    index_buffers_.clear();
 }
 
 void Scene::BuildAccelerationStructures() {
@@ -62,6 +66,8 @@ void Scene::BuildAccelerationStructures() {
 
     // Update materials buffer
     UpdateMaterialsBuffer();
+    // Update emissive triangle buffer
+    UpdateEmissiveTriangleBuffer();
 }
 
 void Scene::UpdateInstances() {
@@ -120,24 +126,60 @@ void Scene::UpdateMaterialsBuffer() {
     grassland::LogInfo("Updated materials buffer with {} materials", materials.size());
 }
 
-std::vector<grassland::graphics::Buffer*> Scene::GetVertexBuffers() const {
-    std::vector<grassland::graphics::Buffer*> vertex_buffers;
-    vertex_buffers.reserve(entities_.size());
-
-    for (const auto& entity : entities_) {
-        vertex_buffers.push_back(entity->GetVertexBuffer());
+void Scene::UpdateEmissiveTriangleBuffer() {
+    if (entities_.empty()) {
+        return;
     }
 
-    return vertex_buffers;
-}
-
-std::vector<grassland::graphics::Buffer*> Scene::GetIndexBuffers() const {
-    std::vector<grassland::graphics::Buffer*> index_buffers;
-    index_buffers.reserve(entities_.size());
+    std::vector<LightTriangle> light_triangles;
 
     for (const auto& entity : entities_) {
-        index_buffers.push_back(entity->GetIndexBuffer());
+        const Material& mat = entity->GetMaterial();
+        if (mat.emission != glm::vec3(0.0f)) {
+            const auto& mesh = entity->GetMesh();
+            const uint32_t* indices = mesh.Indices();
+            const auto& positions = mesh.Positions();
+
+            glm::mat4 transform = entity->GetTransform();
+
+            for (size_t i = 0; i < mesh.NumIndices(); i += 3) {
+                uint32_t idx0 = indices[i];
+                uint32_t idx1 = indices[i + 1];
+                uint32_t idx2 = indices[i + 2];
+
+                glm::vec3 v0_obj(positions[idx0].x(), positions[idx0].y(), positions[idx0].z());
+                glm::vec3 v1_obj(positions[idx1].x(), positions[idx1].y(), positions[idx1].z());
+                glm::vec3 v2_obj(positions[idx2].x(), positions[idx2].y(), positions[idx2].z());
+
+                glm::vec3 v0_world = transform * glm::vec4(v0_obj, 1.0f);
+                glm::vec3 v1_world = transform * glm::vec4(v1_obj, 1.0f);
+                glm::vec3 v2_world = transform * glm::vec4(v2_obj, 1.0f);
+
+                LightTriangle light_triangle;
+                light_triangle.v0 = v0_world;
+                light_triangle.v1 = v1_world;
+                light_triangle.v2 = v2_world;
+                light_triangle.emission = mat.emission;
+
+                light_triangle.pad0 = 0.0f;
+                light_triangle.pad1 = 0.0f;
+                light_triangle.pad2 = 0.0f;
+                light_triangle.pad3 = 0.0f;
+
+                light_triangles.push_back(light_triangle);
+            }
+        }
     }
 
-    return index_buffers;
+    // Create/update light triangles buffer
+    size_t buffer_size = light_triangles.size() * sizeof(LightTriangle);
+    
+    if (!light_triangles_buffer_) {
+        core_->CreateBuffer(buffer_size, 
+                          grassland::graphics::BUFFER_TYPE_DYNAMIC, 
+                          &light_triangles_buffer_);
+    }
+    
+    light_triangles_buffer_->UploadData(light_triangles.data(), buffer_size);
+    grassland::LogInfo("Updated light triangles buffer with {} triangles", light_triangles.size());
 }

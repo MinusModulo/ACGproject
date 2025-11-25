@@ -262,6 +262,16 @@ void Application::OnInit() {
         scene_->AddEntity(blue_cube);
     }
 
+    // light plane
+    {
+        auto light = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.0f, 0.0f, glm::vec3(8.0f, 8.0f, 8.0f)), // Emissive white light
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 3.0f, 0.0f)), glm::vec3(2.0f, 0.1f, 2.0f))
+        );
+        scene_->AddEntity(light);
+    }
+
     // Build acceleration structures
     scene_->BuildAccelerationStructures();
 
@@ -329,6 +339,7 @@ void Application::OnInit() {
                                                              scene_->GetEntityCount());          // space8 - vertex buffers
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER,
                                                              scene_->GetEntityCount());          // space9 - index buffers
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space10 - emissive triangle buffers
     program_->Finalize();
 }
 
@@ -800,6 +811,7 @@ void Application::OnRender() {
     command_context->CmdBindResources(7, { film_->GetAccumulatedSamplesImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(8, scene_->GetVertexBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(9, scene_->GetIndexBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(10, { scene_->GetEmissiveTriangleBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdDispatchRays(window_->GetWidth(), window_->GetHeight(), 1);
     
     // When camera is disabled, increment sample count and use accumulated image

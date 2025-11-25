@@ -1,4 +1,3 @@
-
 struct CameraInfo {
   float4x4 screen_to_camera;
   float4x4 camera_to_world;
@@ -7,6 +6,7 @@ struct CameraInfo {
 struct Material {
   float3 base_color;
   float roughness;
+  float3 emission;
   float metallic;
 };
 
@@ -16,6 +16,13 @@ struct HoverInfo {
 
 struct Vertex {
   float3 position;
+};
+
+struct LightTriangle {
+    float3 v0; float pad0;
+    float3 v1; float pad1;
+    float3 v2; float pad2;
+    float3 emission; float pad3;
 };
 
 RaytracingAccelerationStructure as : register(t0, space0);
@@ -28,6 +35,7 @@ RWTexture2D<float4> accumulated_color : register(u0, space6);
 RWTexture2D<int> accumulated_samples : register(u0, space7);
 StructuredBuffer<Vertex> Vertices[] : register(t0, space8);
 StructuredBuffer<int> Indices[]     : register(t0, space9);
+StructuredBuffer<LightTriangle> lights : register(t0, space10);
 
 // Now we compute color in RayGenMain
 // So I define RayPayload accordingly
@@ -41,11 +49,10 @@ struct RayPayload {
 
   float roughness;
   float metallic;
+  float3 emission;
 };
 
 static const float PI = 3.14159265359;
-static const float RUSSIAN_ROULETTE_START_DEPTH = 3;
-static const float RUSSIAN_ROULETTE_PROBABILITY = 0.001;
 
 // We need rand variables for Monte Carlo integration
 // I leverage a simple Wang Hash + Xorshift RNG combo here
@@ -69,6 +76,47 @@ float rand(inout uint rng_state) {
   return float(rand_xorshift(rng_state)) * (1.0 / 4294967296.0);
 }
 
+float3 F_Schlick(float3 f0, float u) {
+    return f0 + (1.0 - f0) * pow(1.0 - u, 5.0);
+}
+
+float D_GGX(float NdotH, float roughness) {
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH2 = NdotH * NdotH;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    return a2 / (PI * denom * denom);
+}
+
+float G_Smith(float NdotV, float NdotL, float roughness) {
+    float k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
+    float ggx1 = NdotV / (NdotV * (1.0 - k) + k);
+    float ggx2 = NdotL / (NdotL * (1.0 - k) + k);
+    return ggx1 * ggx2;
+}
+
+float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, float metallic) {
+    float3 H = normalize(V + L);
+    float NdotL = max(dot(N, L), 0.0);
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotH = max(dot(N, H), 0.0);
+    float VdotH = max(dot(V, H), 0.0);
+
+    if (NdotL <= 0.0 || NdotV <= 0.0) return float3(0, 0, 0);
+
+    float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
+    float3 F = F_Schlick(F0, VdotH);
+    float D = D_GGX(NdotH, roughness);
+    float G = G_Smith(NdotV, NdotL, roughness);
+
+    float3 specular = (D * G * F) / (4.0 * NdotV * NdotL + 0.001);
+    
+    float3 kS = F;
+    float3 kD = (1.0 - kS) * (1.0 - metallic);
+    float3 diffuse = kD * albedo / PI;
+
+    return diffuse + specular;
+}
 
 [shader("raygeneration")] void RayGenMain() {
   // Path tracing implementation is now deprecated
@@ -158,25 +206,91 @@ float rand(inout uint rng_state) {
 
     // if not hit, accumulate sky color and break
     if (!payload.hit) {
+      // gradient sky 
       float t = 0.5 * (normalize(ray.Direction).y + 1.0);
       float3 sky_color = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
       radiance += throughput * sky_color;
       break;
     }
 
-    // otherwise, prepare the next bounce, N is the normal
+    radiance += throughput * payload.emission;
+
+    // otherwise, N is the normal
     float3 N = payload.normal;
 
-    // Sample a cosine-weighted hemisphere direction around N
+    uint num_lights, stride;
+    lights.GetDimensions(num_lights, stride);
+
+    if (num_lights > 0) {
+      // random sample a emissive object
+      int light_idx = min(int(rand(rng_state) * num_lights), num_lights - 1);
+
+      LightTriangle light_triangle = lights[light_idx];
+
+      float3 v0 = light_triangle.v0;
+      float3 v1 = light_triangle.v1;
+      float3 v2 = light_triangle.v2;
+
+      // sample a point on the triangle
+      float r1 = rand(rng_state);
+      float r2 = rand(rng_state);
+      float sqrt_r1 = sqrt(r1);
+      float u = 1.0 - sqrt_r1;
+      float v = r2 * sqrt_r1;
+      float3 light_pos = (1.0 - u - v) * v0 + u * v1 + v * v2;
+
+      // calculate light normal
+      float3 light_normal = normalize(cross(v1 - v0, v2 - v0));
+
+      // calculate L and distance
+      float3 L_vec = light_pos - payload.position;
+      float dist_sq = max(dot(L_vec, L_vec), 1e-4); // Clamp distance to avoid singularity
+      float dist = sqrt(dist_sq);
+      float3 L = normalize(L_vec);
+
+      // visibility test
+      RayDesc shadow_ray;
+      shadow_ray.Origin = payload.position + N * 1e-3;
+      shadow_ray.Direction = L;
+      shadow_ray.TMin = 1e-3;
+      shadow_ray.TMax = max(dist - 1e-3, 0.0); // Ensure TMax is valid
+
+      RayPayload shadow_payload;
+      shadow_payload.hit = true;
+
+      TraceRay(as, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, 0xFF, 0, 1, 0, shadow_ray, shadow_payload);
+
+      if (!shadow_payload.hit) {
+        // compute pdf & contribution
+        float area = 0.5 * length(cross(v1 - v0, v2 - v0));
+        float pdf_area = (1.0 / float(num_lights)) * (1.0 / area);
+        float cos_theta_light = dot(-L, light_normal);
+
+        if (cos_theta_light > 0.0001) {
+          float pdf_solid = pdf_area * dist_sq / cos_theta_light;
+
+          float3 light_emission = light_triangle.emission;
+          float cos_theta_surface = max(dot(N, L), 0.0);
+          
+          float3 V = -normalize(ray.Direction);
+          float3 brdf = eval_brdf(N, L, V, payload.albedo, payload.roughness, payload.metallic);
+
+          radiance += throughput * light_emission * brdf * cos_theta_surface / (pdf_solid + 1e-6);
+        }
+      }
+    }
+
+    // Sample a uniform hemisphere direction around N
     // ratio1, ratio2 in [0, 1)
     // decide angle phi = (2pi * ratio1)
-    // decide radius in xy plane = sqrt(ratio2)
-    // decide height z = sqrt(1 - ratio2)
+    // decide height z = ratio2 (uniform distribution in z)
+    // decide radius in xy plane = sqrt(1 - z^2)
     float r1 = rand(rng_state);
     float r2 = rand(rng_state);
     float phi = 2.0 * PI * r1;
-    float sqrt_r2 = sqrt(r2);
-    float3 local_dir = float3(cos(phi) * sqrt_r2, sin(phi) * sqrt_r2, sqrt(1.0 - r2));
+    float z = r2;
+    float r_xy = sqrt(1.0 - z * z);
+    float3 local_dir = float3(cos(phi) * r_xy, sin(phi) * r_xy, z);
 
     // here, (tan, bitan, up) is an orthogonal basis
     float3 up = abs(N.z) < 0.999 ? float3(0, 0, 1) : float3(1, 0, 0);
@@ -184,20 +298,30 @@ float rand(inout uint rng_state) {
     float3 bitangent = cross(N, tangent);
     float3 next_dir = local_dir.x * tangent + local_dir.y * bitangent + local_dir.z * N;
 
-    // Lambertian : throughtput *= albedo
-    throughput *= payload.albedo;
+    // pdf = 1 / (2 * PI)
+    // BRDF = eval_brdf(...)
+    // throughput *= BRDF * cos(theta) / pdf
+    
+    float3 V = -normalize(ray.Direction);
+    float3 L = normalize(next_dir);
+    float3 brdf = eval_brdf(N, L, V, payload.albedo, payload.roughness, payload.metallic);
+    
+    float cos_theta = z; // local_dir.z is cos(theta)
+    float pdf = 1.0 / (2.0 * PI);
+    
+    throughput *= brdf * cos_theta / pdf;
 
     // update ray for next bounce
-    ray.Origin = payload.position + N * 0.001;  // offset a bit to avoid self-intersection!!!!
+    ray.Origin = payload.position + N * 1e-3;  // offset a bit to avoid self-intersection!!!!
     ray.Direction = normalize(next_dir);
 
     // Russian roulette termination
-    if (depth >= RUSSIAN_ROULETTE_START_DEPTH) {
-      if (rand(rng_state) <= RUSSIAN_ROULETTE_PROBABILITY) {
-        break;
-      }
-      throughput *= 1 / (1 - RUSSIAN_ROULETTE_PROBABILITY);
+
+    float p = max(0.95, saturate(max(throughput.x, max(throughput.y, throughput.z))));
+    if (rand(rng_state) > p) {
+      break;
     }
+    throughput /= p;
     depth += 1;
   }
   
@@ -246,7 +370,8 @@ float rand(inout uint rng_state) {
 
   payload.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
   payload.normal = world_normal;
-  payload.albedo = mat.base_color;
+  payload.albedo = (float3)mat.base_color;
   payload.roughness = mat.roughness;
   payload.metallic = mat.metallic;
+  payload.emission = (float3)mat.emission;
 }
