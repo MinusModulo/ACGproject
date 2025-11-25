@@ -44,7 +44,8 @@ struct RayPayload {
 };
 
 static const float PI = 3.14159265359;
-static const int MAX_DEPTH = 5;
+static const float RUSSIAN_ROULETTE_START_DEPTH = 3;
+static const float RUSSIAN_ROULETTE_PROBABILITY = 0.001;
 
 // We need rand variables for Monte Carlo integration
 // I leverage a simple Wang Hash + Xorshift RNG combo here
@@ -141,7 +142,10 @@ float rand(inout uint rng_state) {
   float3 radiance = float3(0.0, 0.0, 0.0);
 
   // core of path tracing
-  for (int depth = 0; depth < MAX_DEPTH; ++depth) {
+
+  int depth = 0;
+  
+  while (true) { // infinite loop, we use RR to break :)
 
     // we trace a ray
     payload.hit = false;
@@ -188,12 +192,13 @@ float rand(inout uint rng_state) {
     ray.Direction = normalize(next_dir);
 
     // Russian roulette termination
-    if (depth > 2) {
-      float p = max(throughput.r, max(throughput.g, throughput.b));
-      if (rand(rng_state) > p) {
+    if (depth >= RUSSIAN_ROULETTE_START_DEPTH) {
+      if (rand(rng_state) <= RUSSIAN_ROULETTE_PROBABILITY) {
         break;
       }
+      throughput *= 1 / (1 - RUSSIAN_ROULETTE_PROBABILITY);
     }
+    depth += 1;
   }
   
   // Write outputs ( I forgot to do this at first :( )
