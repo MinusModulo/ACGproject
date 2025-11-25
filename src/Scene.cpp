@@ -120,3 +120,24 @@ void Scene::UpdateMaterialsBuffer() {
     grassland::LogInfo("Updated materials buffer with {} materials", materials.size());
 }
 
+std::vector<grassland::graphics::Buffer*> Scene::GetVertexBuffers() const {
+    std::vector<grassland::graphics::Buffer*> vertex_buffers;
+    vertex_buffers.reserve(entities_.size());
+
+    for (const auto& entity : entities_) {
+        vertex_buffers.push_back(entity->GetVertexBuffer());
+    }
+
+    return vertex_buffers;
+}
+
+std::vector<grassland::graphics::Buffer*> Scene::GetIndexBuffers() const {
+    std::vector<grassland::graphics::Buffer*> index_buffers;
+    index_buffers.reserve(entities_.size());
+
+    for (const auto& entity : entities_) {
+        index_buffers.push_back(entity->GetIndexBuffer());
+    }
+
+    return index_buffers;
+}

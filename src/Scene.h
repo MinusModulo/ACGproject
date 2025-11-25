@@ -35,6 +35,12 @@ public:
     // Get number of entities
     size_t GetEntityCount() const { return entities_.size(); }
 
+    // Get all vertex buffers
+    std::vector<grassland::graphics::Buffer*> GetVertexBuffers() const;
+
+    // Get all index buffers
+    std::vector<grassland::graphics::Buffer*> GetIndexBuffers() const;
+
 private:
     void UpdateMaterialsBuffer();
 

@@ -325,6 +325,10 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space5 - entity ID output
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space6 - accumulated color
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space7 - accumulated samples
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER,
+                                                             scene_->GetEntityCount());          // space8 - vertex buffers
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER,
+                                                             scene_->GetEntityCount());          // space9 - index buffers
     program_->Finalize();
 }
 
@@ -794,6 +798,8 @@ void Application::OnRender() {
     command_context->CmdBindResources(5, { entity_id_image_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(6, { film_->GetAccumulatedColorImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(7, { film_->GetAccumulatedSamplesImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(8, scene_->GetVertexBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(9, scene_->GetIndexBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdDispatchRays(window_->GetWidth(), window_->GetHeight(), 1);
     
     // When camera is disabled, increment sample count and use accumulated image
