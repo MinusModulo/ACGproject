@@ -244,7 +244,8 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
     // use F to decide q
     float3 F0 = lerp(float3(0.04, 0.04, 0.04), payload.albedo, payload.metallic);
     float3 F = F_Schlick(F0, dot(N, V));
-    float q_spec = clamp(saturate((F.r + F.g + F.b) / 3.0), 0.05, 0.95);
+    float luminance = dot(F, float3(0.2126, 0.7152, 0.0722));
+    float q_spec = clamp(saturate(luminance), 0.05, 0.95);
     float q_diff = 1.0 - q_spec;
 
     float3 next_dir;
