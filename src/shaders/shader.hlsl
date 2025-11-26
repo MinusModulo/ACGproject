@@ -35,7 +35,6 @@ RWTexture2D<float4> accumulated_color : register(u0, space6);
 RWTexture2D<int> accumulated_samples : register(u0, space7);
 StructuredBuffer<Vertex> Vertices[] : register(t0, space8);
 StructuredBuffer<int> Indices[]     : register(t0, space9);
-StructuredBuffer<LightTriangle> lights : register(t0, space10);
 
 // Now we compute color in RayGenMain
 // So I define RayPayload accordingly
@@ -84,7 +83,7 @@ float3 F_Schlick(float3 f0, float u) {
 
 float D_GGX(float NdotH, float roughness) {
   // D = a^2 / (pi * ((NdotH^2 * (a^2 - 1) + 1)^2))
-  float a = roughness;
+  float a = roughness * roughness;
   float a2 = a * a;
   float NdotH2 = NdotH * NdotH;
   float denom = (NdotH2 * (a2 - 1.0) + 1.0);
@@ -92,10 +91,11 @@ float D_GGX(float NdotH, float roughness) {
 }
 
 float G_Smith(float NdotV, float NdotL, float roughness) {
-  // G = G1(in) * G1(out), G11 = 2 * (n * v) / (n * v  + sqrt(a + (1 - a) * (n * v)^2))
-  float a = roughness;
-  float ggx1 = 2 * NdotV / (NdotV + sqrt(a + (1.0 - a) * NdotV * NdotV));
-  float ggx2 = 2 * NdotL / (NdotL + sqrt(a + (1.0 - a) * NdotL * NdotL));
+  // G = G1(in) * G1(out), G11 = 2 * (n * v) / (n * v  + sqrt(a2 + (1 - a2) * (n * v)^2))
+  float a = roughness * roughness;
+  float a2 = a * a;
+  float ggx1 = 2 * NdotV / (NdotV + sqrt(a2 + (1.0 - a2) * NdotV * NdotV));
+  float ggx2 = 2 * NdotL / (NdotL + sqrt(a2 + (1.0 - a2) * NdotL * NdotL));
   return ggx1 * ggx2;
 }
 
@@ -120,6 +120,36 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
     float3 diffuse = kD * albedo / PI;
 
     return diffuse + specular;
+}
+
+// sample a cosine-weighted hemisphere direction
+float3 sample_cosine_hemisphere(float u1, float u2) {
+  float r = sqrt(u1);
+  float phi = 2.0 * PI * u2;
+  float x = r * cos(phi);
+  float y = r * sin(phi);
+  float z = sqrt(max(0.0, 1.0 - u1));
+  return float3(x, y, z);
+}
+
+// sample GGX microfacet half-vector in tangent space
+float3 sample_GGX_half(float u1, float u2, float roughness) {
+  // using common mapping: sample theta via tan^2(theta) = a^2 * u1/(1-u1)
+  float a = roughness * roughness;
+  float tan2 = a * a * (u1 / max(eps, 1.0 - u1));
+  float cosTheta = 1.0 / sqrt(1.0 + tan2);
+  float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
+  float phi = 2.0 * PI * u2;
+  return float3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
+}
+
+float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
+  // returns p_spec(omega = L) = D(h) * cos_theta_h / (4 * V·H)
+  float3 H = normalize(V + L);
+  float NdotH = max(dot(N, H), 0.0);
+  float VdotH = max(dot(V, H), 0.0);
+  float D = D_GGX(NdotH, roughness);
+  return (D * NdotH) / (4.0 * VdotH + eps);
 }
 
 [shader("raygeneration")] void RayGenMain() {
@@ -177,43 +207,74 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
 
     radiance += throughput * payload.emission; // emissive term
 
-    // otherwise, N is the normal
+    // otherwise, let N be the normal
     float3 N = payload.normal;
 
-    // Sample a uniform hemisphere direction around N
-    // ratio1, ratio2 in [0, 1)
-    // decide angle phi = (2pi * ratio1)
-    // decide height z = ratio2 (uniform distribution in z)
-    // decide radius in xy plane = sqrt(1 - z^2)
+    // sample randoms
     float r1 = rand(rng_state);
     float r2 = rand(rng_state);
-    float phi = 2.0 * PI * r1;
-    float z = r2;
-    float r_xy = sqrt(1.0 - z * z);
-    float3 local_dir = float3(cos(phi) * r_xy, sin(phi) * r_xy, z);
+    float r3 = rand(rng_state); // choose strategy
 
-    // here, (tan, bitan, up) is an orthogonal basis
+    // build tangent frame
     float3 up = abs(N.z) < 0.999 ? float3(0, 0, 1) : float3(1, 0, 0);
     float3 tangent = normalize(cross(up, N));
     float3 bitangent = cross(N, tangent);
-    float3 next_dir = local_dir.x * tangent + local_dir.y * bitangent + local_dir.z * N;
 
-    // pdf = 1 / (2 * PI)
-    // BRDF = eval_brdf(...)
-    // throughput *= BRDF * cos(theta) / pdf
-    
+    // V is the in-direction (with a negative)
     float3 V = -normalize(ray.Direction);
-    float3 L = normalize(next_dir);
-    float3 brdf = eval_brdf(N, L, V, payload.albedo, payload.roughness, payload.metallic);
-    
-    float cos_theta = z; // local_dir.z is cos(theta)
-    float pdf = 1.0 / (2.0 * PI);
-    
-    throughput *= brdf * cos_theta / pdf;
+
+    // diffuse candidate
+    float3 local_diff = sample_cosine_hemisphere(r1, r2);
+    float3 L_diff = local_diff.x * tangent + local_diff.y * bitangent + local_diff.z * N;
+    L_diff = normalize(L_diff);
+    // pdf = cos / pi
+    float pdf_diff_at_Ldiff = max(dot(N, L_diff), 0.0) / PI;
+
+    // specular candidate
+    float r4 = rand(rng_state);
+    float r5 = rand(rng_state);
+    float3 h_local = sample_GGX_half(r4, r5, payload.roughness);
+    float3 H = h_local.x * tangent + h_local.y * bitangent + h_local.z * N;
+    H = normalize(H);
+    float3 L_spec = normalize(reflect(-V, H));
+    // calc pdf
+    float pdf_spec_at_Lspec = pdf_GGX_for_direction(N, V, L_spec, payload.roughness);
+
+    // choose which direction to actually trace
+    // use F to decide q
+    float3 F0 = lerp(float3(0.04, 0.04, 0.04), payload.albedo, payload.metallic);
+    float3 F = F_Schlick(F0, dot(N, V));
+    float q_spec = clamp(saturate((F.r + F.g + F.b) / 3.0), 0.05, 0.95);
+    float q_diff = 1.0 - q_spec;
+
+    float3 next_dir;
+    if (r3 < q_spec) {
+      next_dir = L_spec;
+    } else {
+      next_dir = L_diff;
+    }
+
+    // in order to do MIS, we need to compute the pdf both startegies
+    float pdf_diff_at_sel = max(dot(N, next_dir), 0.0) / PI;
+    float pdf_spec_at_sel = pdf_GGX_for_direction(N, V, next_dir, payload.roughness);
+
+    // combined pdf for MIS
+    float pdf_total = q_diff * pdf_diff_at_sel + q_spec * pdf_spec_at_sel;
+    pdf_total = max(pdf_total, eps);
+
+    // if direction goes below horizon, continue/break
+    float cos_theta = dot(N, next_dir);
+    if (cos_theta <= 0.0) break;
+
+    // evaluate brdf and update throughput
+    float3 brdf = eval_brdf(N, next_dir, V, payload.albedo, payload.roughness, payload.metallic);
+
+    // This part remains the same, we do not change the coeff.
+    throughput *= brdf * cos_theta / pdf_total;
 
     // update ray for next bounce
     ray.Origin = payload.position + N * eps;  // offset a bit to avoid self-intersection!!!!
-    ray.Direction = normalize(next_dir);
+    ray.Direction = next_dir;
 
     // Russian roulette termination
     float p = max(0.95, saturate(max(throughput.x, max(throughput.y, throughput.z))));
@@ -224,7 +285,7 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
     depth += 1;
   }
   
-  // Write outputs ( I forgot to do this at first :( )
+  // Write outputs
   output[pixel_coords] = float4(radiance, 1.0);
 
   accumulated_color[pixel_coords] = accumulated_color[pixel_coords] + float4(radiance, 1.0);

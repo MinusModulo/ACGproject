@@ -66,8 +66,6 @@ void Scene::BuildAccelerationStructures() {
 
     // Update materials buffer
     UpdateMaterialsBuffer();
-    // Update emissive triangle buffer
-    UpdateEmissiveTriangleBuffer();
 }
 
 void Scene::UpdateInstances() {
@@ -124,68 +122,4 @@ void Scene::UpdateMaterialsBuffer() {
     
     materials_buffer_->UploadData(materials.data(), buffer_size);
     grassland::LogInfo("Updated materials buffer with {} materials", materials.size());
-}
-
-void Scene::UpdateEmissiveTriangleBuffer() {
-    if (entities_.empty()) {
-        return;
-    }
-
-    std::vector<LightTriangle> light_triangles;
-
-    for (const auto& entity : entities_) {
-        const Material& mat = entity->GetMaterial();
-        if (mat.emission != glm::vec3(0.0f)) {
-            const auto& mesh = entity->GetMesh();
-            const uint32_t* indices = mesh.Indices();
-            const auto& positions = mesh.Positions();
-
-            glm::mat4 transform = entity->GetTransform();
-
-            for (size_t i = 0; i < mesh.NumIndices(); i += 3) {
-                uint32_t idx0 = indices[i];
-                uint32_t idx1 = indices[i + 1];
-                uint32_t idx2 = indices[i + 2];
-
-                glm::vec3 v0_obj(positions[idx0].x(), positions[idx0].y(), positions[idx0].z());
-                glm::vec3 v1_obj(positions[idx1].x(), positions[idx1].y(), positions[idx1].z());
-                glm::vec3 v2_obj(positions[idx2].x(), positions[idx2].y(), positions[idx2].z());
-
-                glm::vec3 v0_world = transform * glm::vec4(v0_obj, 1.0f);
-                glm::vec3 v1_world = transform * glm::vec4(v1_obj, 1.0f);
-                glm::vec3 v2_world = transform * glm::vec4(v2_obj, 1.0f);
-
-                LightTriangle light_triangle;
-                light_triangle.v0 = v0_world;
-                light_triangle.v1 = v1_world;
-                light_triangle.v2 = v2_world;
-                light_triangle.emission = mat.emission;
-
-                light_triangle.pad0 = 0.0f;
-                light_triangle.pad1 = 0.0f;
-                light_triangle.pad2 = 0.0f;
-                light_triangle.pad3 = 0.0f;
-
-                light_triangles.push_back(light_triangle);
-            }
-        }
-    }
-
-    // Create/update light triangles buffer
-    size_t buffer_size = light_triangles.size() * sizeof(LightTriangle);
-
-    if (buffer_size == 0) {
-        // Create a dummy buffer if no lights exist to avoid binding errors
-        buffer_size = sizeof(LightTriangle);
-        light_triangles.resize(1);
-    }
-
-    if (!light_triangles_buffer_ || light_triangles_buffer_->Size() < buffer_size) {
-        core_->CreateBuffer(buffer_size, 
-                          grassland::graphics::BUFFER_TYPE_DYNAMIC, 
-                          &light_triangles_buffer_);
-    }
-    
-    light_triangles_buffer_->UploadData(light_triangles.data(), buffer_size);
-    grassland::LogInfo("Updated light triangles buffer with {} triangles", light_triangles.size());
 }

@@ -49,11 +49,8 @@ public:
 
     // Get all index buffers
     std::vector<grassland::graphics::Buffer*> GetIndexBuffers() const { return index_buffers_; }
-
-    grassland::graphics::Buffer* GetEmissiveTriangleBuffer() const { return light_triangles_buffer_.get(); }
 private:
     void UpdateMaterialsBuffer();
-    void UpdateEmissiveTriangleBuffer();
 
     grassland::graphics::Core* core_;
     std::vector<std::shared_ptr<Entity>> entities_;
@@ -61,6 +58,5 @@ private:
     std::unique_ptr<grassland::graphics::Buffer> materials_buffer_;
     std::vector<grassland::graphics::Buffer*> vertex_buffers_;
     std::vector<grassland::graphics::Buffer*> index_buffers_;
-    std::unique_ptr<grassland::graphics::Buffer> light_triangles_buffer_; // the indices of emissive entities
 };
 
