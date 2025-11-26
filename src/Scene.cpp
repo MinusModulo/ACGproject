@@ -173,8 +173,14 @@ void Scene::UpdateEmissiveTriangleBuffer() {
 
     // Create/update light triangles buffer
     size_t buffer_size = light_triangles.size() * sizeof(LightTriangle);
-    
-    if (!light_triangles_buffer_) {
+
+    if (buffer_size == 0) {
+        // Create a dummy buffer if no lights exist to avoid binding errors
+        buffer_size = sizeof(LightTriangle);
+        light_triangles.resize(1);
+    }
+
+    if (!light_triangles_buffer_ || light_triangles_buffer_->Size() < buffer_size) {
         core_->CreateBuffer(buffer_size, 
                           grassland::graphics::BUFFER_TYPE_DYNAMIC, 
                           &light_triangles_buffer_);

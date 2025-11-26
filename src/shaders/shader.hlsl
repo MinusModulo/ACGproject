@@ -53,6 +53,7 @@ struct RayPayload {
 };
 
 static const float PI = 3.14159265359;
+static const float eps = 1e-6;
 
 // We need rand variables for Monte Carlo integration
 // I leverage a simple Wang Hash + Xorshift RNG combo here
@@ -77,22 +78,25 @@ float rand(inout uint rng_state) {
 }
 
 float3 F_Schlick(float3 f0, float u) {
-    return f0 + (1.0 - f0) * pow(1.0 - u, 5.0);
+  // F = F0 + (1 - F0) * (1 - cos)^5
+  return f0 + (1.0 - f0) * pow(1.0 - u, 5.0);
 }
 
 float D_GGX(float NdotH, float roughness) {
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float NdotH2 = NdotH * NdotH;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    return a2 / (PI * denom * denom);
+  // D = a^2 / (pi * ((NdotH^2 * (a^2 - 1) + 1)^2))
+  float a = roughness;
+  float a2 = a * a;
+  float NdotH2 = NdotH * NdotH;
+  float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+  return a2 / (PI * denom * denom);
 }
 
 float G_Smith(float NdotV, float NdotL, float roughness) {
-    float k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
-    float ggx1 = NdotV / (NdotV * (1.0 - k) + k);
-    float ggx2 = NdotL / (NdotL * (1.0 - k) + k);
-    return ggx1 * ggx2;
+  // G = G1(in) * G1(out), G11 = 2 * (n * v) / (n * v  + sqrt(a + (1 - a) * (n * v)^2))
+  float a = roughness;
+  float ggx1 = 2 * NdotV / (NdotV + sqrt(a + (1.0 - a) * NdotV * NdotV));
+  float ggx2 = 2 * NdotL / (NdotL + sqrt(a + (1.0 - a) * NdotL * NdotL));
+  return ggx1 * ggx2;
 }
 
 float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, float metallic) {
@@ -109,7 +113,7 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
     float D = D_GGX(NdotH, roughness);
     float G = G_Smith(NdotV, NdotL, roughness);
 
-    float3 specular = (D * G * F) / (4.0 * NdotV * NdotL + 0.001);
+    float3 specular = (D * G * F) / (4.0 * NdotV * NdotL + eps);
     
     float3 kS = F;
     float3 kD = (1.0 - kS) * (1.0 - metallic);
@@ -119,53 +123,11 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
 }
 
 [shader("raygeneration")] void RayGenMain() {
-  // Path tracing implementation is now deprecated
-  // I prefer to keep the code :)
-  // float2 pixel_center = (float2)DispatchRaysIndex() + float2(0.5, 0.5);
-  // float2 uv = pixel_center / float2(DispatchRaysDimensions().xy);
-  // uv.y = 1.0 - uv.y;
-  // float2 d = uv * 2.0 - 1.0;
-  // float4 origin = mul(camera_info.camera_to_world, float4(0, 0, 0, 1));
-  // float4 target = mul(camera_info.screen_to_camera, float4(d, 1, 1));
-  // float4 direction = mul(camera_info.camera_to_world, float4(target.xyz, 0));
-
-  // float t_min = 0.001;
-  // float t_max = 10000.0;
-
-  // RayPayload payload;
-  // payload.color = float3(0, 0, 0);
-  // payload.hit = false;
-  // payload.instance_id = 0;
-
-  // RayDesc ray;
-  // ray.Origin = origin.xyz;
-  // ray.Direction = normalize(direction.xyz);
-  // ray.TMin = t_min;
-  // ray.TMax = t_max;
-
-  // TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
-
-  // uint2 pixel_coords = DispatchRaysIndex().xy;
-  
-  // // Write to immediate output (for camera movement mode)
-  // output[pixel_coords] = float4(payload.color, 1);
-  
-  // // Write entity ID to the ID buffer
-  // // If no hit, write -1; otherwise write the instance ID
-  // entity_id_output[pixel_coords] = payload.hit ? (int)payload.instance_id : -1;
-  
-  // // Accumulate color for progressive rendering (when camera is stationary)
-  // float4 prev_color = accumulated_color[pixel_coords];
-  // int prev_samples = accumulated_samples[pixel_coords];
-  
-  // accumulated_color[pixel_coords] = prev_color + float4(payload.color, 1);
-  // accumulated_samples[pixel_coords] = prev_samples + 1;
-
   uint2 pixel_coords = DispatchRaysIndex().xy;
   int frame_count = accumulated_samples[pixel_coords];
 
   // we hash the state with both pixel coordinates and frame count
-  uint rng_state = wang_hash((pixel_coords.x + pixel_coords.y * DispatchRaysDimensions().x) + 1919810) ^ wang_hash(frame_count + 114514);
+  uint rng_state = wang_hash((pixel_coords.x + pixel_coords.y * DispatchRaysDimensions().x) * 666 + 1919810) ^ wang_hash(frame_count * 233 + 114514);
 
   // The calculating uv, d, origin, target and direction part remains the same
   float2 pixel_center = (float2)DispatchRaysIndex() + float2(0.5, 0.5);
@@ -177,7 +139,7 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
   float4 direction = mul(camera_info.camera_to_world, float4(target.xyz, 0));
 
   // The ray init part remains the same
-  float t_min = 0.001;
+  float t_min = eps;
   float t_max = 10000.0;
   RayDesc ray;
   ray.Origin = origin.xyz;
@@ -213,72 +175,10 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
       break;
     }
 
-    radiance += throughput * payload.emission;
+    radiance += throughput * payload.emission; // emissive term
 
     // otherwise, N is the normal
     float3 N = payload.normal;
-
-    uint num_lights, stride;
-    lights.GetDimensions(num_lights, stride);
-
-    if (num_lights > 0) {
-      // random sample a emissive object
-      int light_idx = min(int(rand(rng_state) * num_lights), num_lights - 1);
-
-      LightTriangle light_triangle = lights[light_idx];
-
-      float3 v0 = light_triangle.v0;
-      float3 v1 = light_triangle.v1;
-      float3 v2 = light_triangle.v2;
-
-      // sample a point on the triangle
-      float r1 = rand(rng_state);
-      float r2 = rand(rng_state);
-      float sqrt_r1 = sqrt(r1);
-      float u = 1.0 - sqrt_r1;
-      float v = r2 * sqrt_r1;
-      float3 light_pos = (1.0 - u - v) * v0 + u * v1 + v * v2;
-
-      // calculate light normal
-      float3 light_normal = normalize(cross(v1 - v0, v2 - v0));
-
-      // calculate L and distance
-      float3 L_vec = light_pos - payload.position;
-      float dist_sq = max(dot(L_vec, L_vec), 1e-4); // Clamp distance to avoid singularity
-      float dist = sqrt(dist_sq);
-      float3 L = normalize(L_vec);
-
-      // visibility test
-      RayDesc shadow_ray;
-      shadow_ray.Origin = payload.position + N * 1e-3;
-      shadow_ray.Direction = L;
-      shadow_ray.TMin = 1e-3;
-      shadow_ray.TMax = max(dist - 1e-3, 0.0); // Ensure TMax is valid
-
-      RayPayload shadow_payload;
-      shadow_payload.hit = true;
-
-      TraceRay(as, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, 0xFF, 0, 1, 0, shadow_ray, shadow_payload);
-
-      if (!shadow_payload.hit) {
-        // compute pdf & contribution
-        float area = 0.5 * length(cross(v1 - v0, v2 - v0));
-        float pdf_area = (1.0 / float(num_lights)) * (1.0 / area);
-        float cos_theta_light = dot(-L, light_normal);
-
-        if (cos_theta_light > 0.0001) {
-          float pdf_solid = pdf_area * dist_sq / cos_theta_light;
-
-          float3 light_emission = light_triangle.emission;
-          float cos_theta_surface = max(dot(N, L), 0.0);
-          
-          float3 V = -normalize(ray.Direction);
-          float3 brdf = eval_brdf(N, L, V, payload.albedo, payload.roughness, payload.metallic);
-
-          radiance += throughput * light_emission * brdf * cos_theta_surface / (pdf_solid + 1e-6);
-        }
-      }
-    }
 
     // Sample a uniform hemisphere direction around N
     // ratio1, ratio2 in [0, 1)
@@ -312,11 +212,10 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
     throughput *= brdf * cos_theta / pdf;
 
     // update ray for next bounce
-    ray.Origin = payload.position + N * 1e-3;  // offset a bit to avoid self-intersection!!!!
+    ray.Origin = payload.position + N * eps;  // offset a bit to avoid self-intersection!!!!
     ray.Direction = normalize(next_dir);
 
     // Russian roulette termination
-
     float p = max(0.95, saturate(max(throughput.x, max(throughput.y, throughput.z))));
     if (rand(rng_state) > p) {
       break;
