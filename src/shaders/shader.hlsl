@@ -8,6 +8,8 @@ struct Material {
   float roughness;
   float3 emission;
   float metallic;
+  float transmission;
+  float ior;
 };
 
 struct HoverInfo {
@@ -35,6 +37,7 @@ RWTexture2D<float4> accumulated_color : register(u0, space6);
 RWTexture2D<int> accumulated_samples : register(u0, space7);
 StructuredBuffer<Vertex> Vertices[] : register(t0, space8);
 StructuredBuffer<int> Indices[]     : register(t0, space9);
+StructuredBuffer<LightTriangle> lights : register(t0, space10);
 
 // Now we compute color in RayGenMain
 // So I define RayPayload accordingly
@@ -49,6 +52,10 @@ struct RayPayload {
   float roughness;
   float metallic;
   float3 emission;
+  
+  float transmission;
+  float ior;
+  float front_face;
 };
 
 static const float PI = 3.14159265359;
@@ -160,7 +167,9 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
   uint rng_state = wang_hash((pixel_coords.x + pixel_coords.y * DispatchRaysDimensions().x) * 666 + 1919810) ^ wang_hash(frame_count * 233 + 114514);
 
   // The calculating uv, d, origin, target and direction part remains the same
-  float2 pixel_center = (float2)DispatchRaysIndex() + float2(0.5, 0.5);
+  // Jitter the pixel position for anti-aliasing
+  float2 jitter = float2(rand(rng_state), rand(rng_state));
+  float2 pixel_center = (float2)DispatchRaysIndex() + jitter;
   float2 uv = pixel_center / float2(DispatchRaysDimensions().xy);
   uv.y = 1.0 - uv.y;
   float2 d = uv * 2.0 - 1.0;
@@ -206,6 +215,59 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
     }
 
     radiance += throughput * payload.emission; // emissive term
+
+    // transmission
+    if (payload.transmission > 0.0) {
+      // randomly choose transmission or not
+      if (rand(rng_state) < payload.transmission) {
+        // Get N and V
+        float3 N = payload.normal;
+        float3 V = -normalize(ray.Direction);
+        
+        // get eta, the index of refraction
+        float eta = payload.front_face ? (1.0 / payload.ior) : (payload.ior);
+        
+        // Fresnel (this is true)
+        float F0 = (1.0 - payload.ior) / (1.0 + payload.ior);
+        F0 = F0 * F0;
+        float F = F_Schlick(float3(F0, F0, F0), dot(V, N)).x;
+        
+        // get refraction direction
+        float3 I = ray.Direction;
+        float3 refract_dir = refract(I, N, eta);
+        
+        // check for total internal reflection
+        if (length(refract_dir) < 0.001) {
+            F = 1.0;
+        }
+        
+        if (rand(rng_state) < F) {
+            // reflection
+            float3 reflect_dir = reflect(I, N);
+            ray.Origin = payload.position + N * eps;
+            ray.Direction = normalize(reflect_dir);
+            // you get full albedo on reflection
+        } else {
+            // refraction
+            ray.Origin = payload.position - N * eps; // rem offset
+            ray.Direction = normalize(refract_dir);
+            throughput *= payload.albedo; // you get albedo tint on refraction
+        }
+        
+        // weighting
+        throughput /= payload.transmission;
+        
+        float p = max(0.95, saturate(max(throughput.x, max(throughput.y, throughput.z))));
+        if (rand(rng_state) > p) break;
+        throughput /= p;
+        depth += 1;
+        
+        continue; // skip opaque, so if transmission chosen, it's not metallic, rough, etc.
+      } else {
+        // Normalize throughput for not choosing transmission
+        throughput /= (1.0 - payload.transmission);
+      }
+    }
 
     // otherwise, let N be the normal
     float3 N = payload.normal;
@@ -279,9 +341,7 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
 
     // Russian roulette termination
     float p = max(0.95, saturate(max(throughput.x, max(throughput.y, throughput.z))));
-    if (rand(rng_state) > p) {
-      break;
-    }
+    if (rand(rng_state) > p) break;
     throughput /= p;
     depth += 1;
   }
@@ -325,8 +385,10 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
 
   float3 world_normal = normalize(mul(ObjectToWorld3x4(), float4(normal, 0.0)));
 
+  payload.front_face = true;
   if (dot(world_normal, WorldRayDirection()) > 0.0) {
     world_normal = -world_normal;
+    payload.front_face = false;
   }
 
   payload.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
@@ -335,4 +397,6 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
   payload.roughness = mat.roughness;
   payload.metallic = mat.metallic;
   payload.emission = (float3)mat.emission;
+  payload.transmission = mat.transmission;
+  payload.ior = mat.ior;
 }

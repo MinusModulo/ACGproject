@@ -242,14 +242,14 @@ void Application::OnInit() {
         scene_->AddEntity(red_sphere);
     }
 
-    // Green metallic sphere
+    // Glass sphere (Green tint)
     {
-        auto green_sphere = std::make_shared<Entity>(
+        auto glass_sphere = std::make_shared<Entity>(
             "meshes/octahedron.obj",
-            Material(glm::vec3(0.2f, 1.0f, 0.2f), 0.1f, 0.95f),
+            Material(glm::vec3(0.8f, 1.0f, 0.8f), 0.0f, 0.0f, glm::vec3(0.0f), 1.0f, 1.5f),
             glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f))
         );
-        scene_->AddEntity(green_sphere);
+        scene_->AddEntity(glass_sphere);
     }
 
     // Blue cube
