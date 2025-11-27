@@ -20,13 +20,6 @@ struct Vertex {
   float3 position;
 };
 
-struct LightTriangle {
-    float3 v0; float pad0;
-    float3 v1; float pad1;
-    float3 v2; float pad2;
-    float3 emission; float pad3;
-};
-
 RaytracingAccelerationStructure as : register(t0, space0);
 RWTexture2D<float4> output : register(u0, space1);
 ConstantBuffer<CameraInfo> camera_info : register(b0, space2);
@@ -37,7 +30,6 @@ RWTexture2D<float4> accumulated_color : register(u0, space6);
 RWTexture2D<int> accumulated_samples : register(u0, space7);
 StructuredBuffer<Vertex> Vertices[] : register(t0, space8);
 StructuredBuffer<int> Indices[]     : register(t0, space9);
-StructuredBuffer<LightTriangle> lights : register(t0, space10);
 
 // Now we compute color in RayGenMain
 // So I define RayPayload accordingly
@@ -56,10 +48,12 @@ struct RayPayload {
   float transmission;
   float ior;
   float front_face;
+
+  float new_eps;
 };
 
 static const float PI = 3.14159265359;
-static const float eps = 1e-5;
+static const float eps = 1e-6;
 
 // We need rand variables for Monte Carlo integration
 // I leverage a simple Wang Hash + Xorshift RNG combo here
@@ -94,15 +88,15 @@ float D_GGX(float NdotH, float roughness) {
   float a2 = a * a;
   float NdotH2 = NdotH * NdotH;
   float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-  return a2 / (PI * denom * denom);
+  return a2 / max(PI * denom * denom, eps);
 }
 
 float G_Smith(float NdotV, float NdotL, float roughness) {
   // G = G1(in) * G1(out), G11 = 2 * (n * v) / (n * v  + sqrt(a2 + (1 - a2) * (n * v)^2))
   float a = roughness * roughness;
   float a2 = a * a;
-  float ggx1 = 2 * NdotV / (NdotV + sqrt(a2 + (1.0 - a2) * NdotV * NdotV));
-  float ggx2 = 2 * NdotL / (NdotL + sqrt(a2 + (1.0 - a2) * NdotL * NdotL));
+  float ggx1 = 2 * NdotV / max(NdotV + sqrt(a2 + (1.0 - a2) * NdotV * NdotV), eps);
+  float ggx2 = 2 * NdotL / max(NdotL + sqrt(a2 + (1.0 - a2) * NdotL * NdotL), eps);
   return ggx1 * ggx2;
 }
 
@@ -120,7 +114,7 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
     float D = max(0.0f, D_GGX(NdotH, roughness));
     float G = max(0.0f, G_Smith(NdotV, NdotL, roughness));
 
-    float3 specular = (D * G * F) / (4.0 * NdotV * NdotL + eps);
+    float3 specular = (D * G * F) / max(4.0 * NdotV * NdotL, eps);
     
     float3 kS = F;
     float3 kD = (1.0 - kS) * (1.0 - metallic);
@@ -156,7 +150,7 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
   float NdotH = max(dot(N, H), 0.0);
   float VdotH = max(dot(V, H), 0.0);
   float D = D_GGX(NdotH, roughness);
-  return (D * NdotH) / (4.0 * VdotH + eps);
+  return (D * NdotH) / max(4.0 * VdotH, eps);
 }
 
 [shader("raygeneration")] void RayGenMain() {
@@ -179,7 +173,7 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
 
   // The ray init part remains the same
   float t_min = eps;
-  float t_max = 10000.0;
+  float t_max = 1e4;
   RayDesc ray;
   ray.Origin = origin.xyz;
   ray.Direction = normalize(direction.xyz);
@@ -208,9 +202,9 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
     // if not hit, accumulate sky color and break
     if (!payload.hit) {
       // gradient sky 
-      float t = 0.5 * (normalize(ray.Direction).y + 1.0);
-      float3 sky_color = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
-      radiance += throughput * sky_color;
+      // float t = 0.5 * (normalize(ray.Direction).y + 1.0);
+      // float3 sky_color = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
+      // radiance += throughput * sky_color;
       break;
     }
 
@@ -244,20 +238,21 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
         if (rand(rng_state) < F) {
             // reflection
             float3 reflect_dir = reflect(I, N);
-            ray.Origin = payload.position + N * eps;
             ray.Direction = normalize(reflect_dir);
+            ray.Origin = payload.position + ray.Direction * payload.new_eps;
             // you get full albedo on reflection
         } else {
             // refraction
-            ray.Origin = payload.position - N * eps; // rem offset
             ray.Direction = normalize(refract_dir);
+            ray.Origin = payload.position - ray.Direction * payload.new_eps;
             throughput *= payload.albedo; // you get albedo tint on refraction
         }
         
         // weighting
         throughput /= payload.transmission;
         
-        float p = max(0.95, saturate(max(throughput.x, max(throughput.y, throughput.z))));
+        float p = saturate(max(throughput.x, max(throughput.y, throughput.z)));
+        p = clamp(p, 0.05, 0.95);
         if (rand(rng_state) > p) break;
         throughput /= p;
         depth += 1;
@@ -323,7 +318,6 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
 
     // combined pdf for MIS
     float pdf_total = q_diff * pdf_diff_at_sel + q_spec * pdf_spec_at_sel;
-    pdf_total = max(pdf_total, eps);
 
     // if direction goes below horizon, continue/break
     float cos_theta = dot(N, next_dir);
@@ -333,14 +327,15 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
     float3 brdf = eval_brdf(N, next_dir, V, payload.albedo, payload.roughness, payload.metallic);
 
     // This part remains the same, we do not change the coeff.
-    throughput *= brdf * cos_theta / pdf_total;
+    throughput *= brdf * cos_theta / max(eps, pdf_total);
 
     // update ray for next bounce
-    ray.Origin = payload.position + N * eps;  // offset a bit to avoid self-intersection!!!!
+    ray.Origin = payload.position + next_dir * payload.new_eps;  // offset a bit to avoid self-intersection!!!!
     ray.Direction = next_dir;
 
     // Russian roulette termination
-    float p = max(0.95, saturate(max(throughput.x, max(throughput.y, throughput.z))));
+    float p = saturate(max(throughput.x, max(throughput.y, throughput.z)));
+    p = clamp(p, 0.05, 0.95);
     if (rand(rng_state) > p) break;
     throughput /= p;
     depth += 1;
@@ -399,4 +394,5 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
   payload.emission = (float3)mat.emission;
   payload.transmission = mat.transmission;
   payload.ior = mat.ior;
+  payload.new_eps = RayTCurrent() * 1e-4 + eps;
 }

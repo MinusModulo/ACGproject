@@ -221,11 +221,22 @@ void Application::OnInit() {
     scene_ = std::make_unique<Scene>(core_.get());
 
     // Add entities to the scene
-    // Ground plane - a cube scaled to be flat
+    // reflective ground plane
+    // {
+    //     auto ground = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.02f, 1.0f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f)), 
+    //                   glm::vec3(10.0f, 0.1f, 10.0f))
+    //     );
+    //     scene_->AddEntity(ground);
+    // }
+
+    // normal ground plane
     {
         auto ground = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.02f, 1.0f),
+            Material(glm::vec3(0.5f, 0.7f, 1.0f), 0.5f, 0.0f),
             glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f)), 
                       glm::vec3(10.0f, 0.1f, 10.0f))
         );
@@ -246,21 +257,55 @@ void Application::OnInit() {
     {
         auto glass_sphere = std::make_shared<Entity>(
             "meshes/octahedron.obj",
-            Material(glm::vec3(0.8f, 1.0f, 0.8f), 0.0f, 0.0f, glm::vec3(0.0f), 1.0f, 1.5f),
+            Material(glm::vec3(0.8f, 1.0f, 0.8f), 0.0f, 0.0f, glm::vec3(0.0f), 1.0f, 2.4f),
             glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f))
         );
         scene_->AddEntity(glass_sphere);
     }
 
+    // normal green sphere
+    // {
+    //     auto green_sphere = std::make_shared<Entity>(
+    //         "meshes/octahedron.obj",
+    //         Material(glm::vec3(0.2f, 1.0f, 0.2f), 0.3f, 0.0f),
+    //         glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f))
+    //     );
+    //     scene_->AddEntity(green_sphere);
+    // }
+
     // Blue cube
     {
         auto blue_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
-            Material(glm::vec3(0.2f, 0.2f, 1.0f), 0.5f, 0.0f, glm::vec3(5.0f, 3.0f, 3.0f)),
+            Material(glm::vec3(0.2f, 0.2f, 1.0f), 0.5f, 0.0f),
             glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, 0.0f))
         );
         scene_->AddEntity(blue_cube);
     }
+    
+    // large light above the scene
+    {
+        auto light = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            Material(glm::vec3(1.0f), 0.02f, 0.0f, glm::vec3(3.0f), 0.0f, 1.0f),
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 5.0f, 0.0f)), 
+                      glm::vec3(3.0f, 0.1f, 3.0f))
+        );
+        scene_->AddEntity(light);
+    }
+
+    // I have an idea
+    ///////////////////////////////////
+    // No you don't
+    // {
+    //     auto small_cube_light_inside_glass = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         Material(glm::vec3(1.0f), 0.02f, 0.0f, glm::vec3(2.5f, 2.0f, 1.5f), 0.0f, 1.0f),
+    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f)), 
+    //                   glm::vec3(0.125f, 0.125f, 0.125f))
+    //     );
+    //     scene_->AddEntity(small_cube_light_inside_glass);
+    // }
 
 
     // Build acceleration structures

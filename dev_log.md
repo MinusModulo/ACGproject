@@ -28,3 +28,19 @@
 - 修复了远处 sample 会出现黑点的问题，发现是没和 0 取 max 导致出现一些浮点数计算误差。
 
 - 添加了发光物体和反光地面，效果很棒。注意到 roughtness > 0.15，不然会 throughput 下溢然后直接整个画面全黑。
+
+- 添加了 transmissive 材质，效果很棒，实现了钻石（雾）
+
+- 修复了黑天情况下大光源造成的场景过曝问题，最后发现是 eps 的锅，导致 self-intersection，按照 GPT 的指示使用了 t * 1e-4 + eps 作为偏移量，效果很好。
+
+- 目前的实现效果 ![alt text](assets/image/screenshot_20251127_221302.png)
+![alt text](assets/image/screenshot_20251127_204103.png)
+![alt text](assets/image/screenshot_20251127_202300.png)
+![alt text](assets/image/nb.png)
+
+- 黑灯瞎火的情况下有一些噪点。完全合理地认为是因为直接光源采样没有实现的原因。
+
+- 我有一个想法![alt text](assets/image/screenshot_20251127_223456.png)
+
+好吧，因为光路太复杂所以爆炸了。
+
