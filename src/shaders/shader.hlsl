@@ -52,7 +52,7 @@ struct RayPayload {
 };
 
 static const float PI = 3.14159265359;
-static const float eps = 1e-6;
+static const float eps = 1e-5;
 
 // We need rand variables for Monte Carlo integration
 // I leverage a simple Wang Hash + Xorshift RNG combo here
@@ -109,9 +109,9 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
     if (NdotL <= 0.0 || NdotV <= 0.0) return float3(0, 0, 0);
 
     float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
-    float3 F = F_Schlick(F0, VdotH);
-    float D = D_GGX(NdotH, roughness);
-    float G = G_Smith(NdotV, NdotL, roughness);
+    float3 F = max(0.0f, F_Schlick(F0, VdotH));
+    float D = max(0.0f, D_GGX(NdotH, roughness));
+    float G = max(0.0f, G_Smith(NdotV, NdotL, roughness));
 
     float3 specular = (D * G * F) / (4.0 * NdotV * NdotL + eps);
     
