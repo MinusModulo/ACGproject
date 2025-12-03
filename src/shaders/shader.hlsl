@@ -10,6 +10,8 @@ struct Material {
   float metallic;
   float transmission;
   float ior;
+  int base_color_tex;
+  float base_color_tex_blend; // This is used to blend between base color and texture, in case we both have them
 };
 
 struct HoverInfo {
@@ -30,6 +32,9 @@ RWTexture2D<float4> accumulated_color : register(u0, space6);
 RWTexture2D<int> accumulated_samples : register(u0, space7);
 StructuredBuffer<Vertex> Vertices[] : register(t0, space8);
 StructuredBuffer<int> Indices[]     : register(t0, space9);
+StructuredBuffer<float2> Texcoords[] : register(t0, space10);
+Texture2D<float4> BaseColorTextures[] : register(t0, space11);
+SamplerState LinearWrap : register(s0, space12);
 
 // Now we compute color in RayGenMain
 // So I define RayPayload accordingly
@@ -202,9 +207,9 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
     // if not hit, accumulate sky color and break
     if (!payload.hit) {
       // gradient sky 
-      // float t = 0.5 * (normalize(ray.Direction).y + 1.0);
-      // float3 sky_color = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
-      // radiance += throughput * sky_color;
+      float t = 0.5 * (normalize(ray.Direction).y + 1.0);
+      float3 sky_color = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
+      radiance += throughput * sky_color;
       break;
     }
 
@@ -388,7 +393,24 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
 
   payload.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
   payload.normal = world_normal;
-  payload.albedo = (float3)mat.base_color;
+
+  // Use uv to get texcoords
+   // 我想想,是不是其实应该是物体的 index 而不是材料的 index? 好像只是一个命名错误，mat_idx 应该就是物体的 index，所以没有问题
+  float2 uv0 = Texcoords[material_idx][index0];
+  float2 uv1 = Texcoords[material_idx][index1];
+  float2 uv2 = Texcoords[material_idx][index2];
+
+  float2 bc = attr.barycentrics;
+  float3 bary = float3(1.0 - bc.x - bc.y, bc.x, bc.y);
+  float2 uv = uv0 * bary.x + uv1 * bary.y + uv2 * bary.z;
+
+  float3 baseColorTex = mat.base_color;
+  if (mat.base_color_tex >= 0) { // if we have a texture
+    float3 texSample = BaseColorTextures[mat.base_color_tex].SampleLevel(LinearWrap, uv, 0.0f).rgb;
+    baseColorTex = lerp(mat.base_color, texSample, saturate(mat.base_color_tex_blend)); // If 1, then use full texture
+  }
+
+  payload.albedo = (float3)baseColorTex;
   payload.roughness = mat.roughness;
   payload.metallic = mat.metallic;
   payload.emission = (float3)mat.emission;

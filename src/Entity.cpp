@@ -10,6 +10,15 @@ Entity::Entity(const std::string& obj_file_path,
     LoadMesh(obj_file_path);
 }
 
+Entity::Entity(const grassland::Mesh<float>& mesh,
+               const Material& material,
+               const glm::mat4& transform)
+    : mesh_(mesh)
+    , material_(material)
+    , transform_(transform)
+    , mesh_loaded_(true) {
+}
+
 Entity::~Entity() {
     blas_.reset();
     index_buffer_.reset();

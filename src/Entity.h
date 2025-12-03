@@ -9,6 +9,10 @@ public:
            const Material& material = Material(),
            const glm::mat4& transform = glm::mat4(1.0f));
 
+    Entity(const grassland::Mesh<float>& mesh,
+           const Material& material = Material(),
+           const glm::mat4& transform = glm::mat4(1.0f));
+
     ~Entity();
 
     // Load mesh from OBJ file

@@ -5,7 +5,6 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "imgui.h"
 
-#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
 #include <chrono>
@@ -220,96 +219,14 @@ void Application::OnInit() {
     // Create scene
     scene_ = std::make_unique<Scene>(core_.get());
 
-    // Add entities to the scene
-    // reflective ground plane
-    // {
-    //     auto ground = std::make_shared<Entity>(
-    //         "meshes/cube.obj",
-    //         Material(glm::vec3(1.0f, 1.0f, 1.0f), 0.02f, 1.0f),
-    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f)), 
-    //                   glm::vec3(10.0f, 0.1f, 10.0f))
-    //     );
-    //     scene_->AddEntity(ground);
-    // }
-
-    // normal ground plane
-    {
-        auto ground = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.5f, 0.7f, 1.0f), 0.5f, 0.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f)), 
-                      glm::vec3(10.0f, 0.1f, 10.0f))
-        );
-        scene_->AddEntity(ground);
-    }
-
-    // Red sphere (using octahedron as sphere substitute)
-    {
-        auto red_sphere = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(1.0f, 0.2f, 0.2f), 0.3f, 0.0f),
-            glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f, 0.5f, 0.0f))
-        );
-        scene_->AddEntity(red_sphere);
-    }
-
-    // Glass sphere (Green tint)
-    {
-        auto glass_sphere = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            Material(glm::vec3(0.8f, 1.0f, 0.8f), 0.0f, 0.0f, glm::vec3(0.0f), 1.0f, 2.4f),
-            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f))
-        );
-        scene_->AddEntity(glass_sphere);
-    }
-
-    // normal green sphere
-    // {
-    //     auto green_sphere = std::make_shared<Entity>(
-    //         "meshes/octahedron.obj",
-    //         Material(glm::vec3(0.2f, 1.0f, 0.2f), 0.3f, 0.0f),
-    //         glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f))
-    //     );
-    //     scene_->AddEntity(green_sphere);
-    // }
-
-    // Blue cube
-    {
-        auto blue_cube = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(0.2f, 0.2f, 1.0f), 0.5f, 0.0f),
-            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, 0.0f))
-        );
-        scene_->AddEntity(blue_cube);
-    }
-    
-    // large light above the scene
-    {
-        auto light = std::make_shared<Entity>(
-            "meshes/cube.obj",
-            Material(glm::vec3(1.0f), 0.02f, 0.0f, glm::vec3(3.0f), 0.0f, 1.0f),
-            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 5.0f, 0.0f)), 
-                      glm::vec3(3.0f, 0.1f, 3.0f))
-        );
-        scene_->AddEntity(light);
-    }
-
-    // I have an idea
-    ///////////////////////////////////
-    // No you don't
-    // {
-    //     auto small_cube_light_inside_glass = std::make_shared<Entity>(
-    //         "meshes/cube.obj",
-    //         Material(glm::vec3(1.0f), 0.02f, 0.0f, glm::vec3(2.5f, 2.0f, 1.5f), 0.0f, 1.0f),
-    //         glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f)), 
-    //                   glm::vec3(0.125f, 0.125f, 0.125f))
-    //     );
-    //     scene_->AddEntity(small_cube_light_inside_glass);
-    // }
-
+    // Call Load from glb function
+    scene_->LoadFromGLB("new.glb");
 
     // Build acceleration structures
     scene_->BuildAccelerationStructures();
+
+    // Build sampler
+    scene_->BuildSampler();
 
     // Create film for accumulation
     film_ = std::make_unique<Film>(core_.get(), window_->GetWidth(), window_->GetHeight());
@@ -375,6 +292,11 @@ void Application::OnInit() {
                                                              scene_->GetEntityCount());          // space8 - vertex buffers
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER,
                                                              scene_->GetEntityCount());          // space9 - index buffers
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER,
+                                                             scene_->GetEntityCount());          // space10 - texcoord buffers
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE,
+                                                   scene_->GetBaseColorTextureCount());          // space11 - base color textures
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_SAMPLER, 1);                 // space12 - sampler
     program_->Finalize();
 }
 
@@ -846,8 +768,11 @@ void Application::OnRender() {
     command_context->CmdBindResources(7, { film_->GetAccumulatedSamplesImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(8, scene_->GetVertexBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(9, scene_->GetIndexBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(10, scene_->GetTexcoordBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(11, scene_->GetBaseColorTextureSRVs(), grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(12, { scene_->GetLinearWrapSampler() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdDispatchRays(window_->GetWidth(), window_->GetHeight(), 1);
-    
+
     // When camera is disabled, increment sample count and use accumulated image
     grassland::graphics::Image* display_image = color_image_.get();
     if (!camera_enabled_) {
