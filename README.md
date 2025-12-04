@@ -55,6 +55,9 @@
 - 黑是因为没实现 metalrough texture，因此默认值是 1.0 1.0，会导致很黑。
 
 - 使用了 tiny_gltf 读取 glb 文件。
+  
+- 加了 roughness 和 metallic，帅！
+  
 
 ### TO-DO
 

@@ -3,40 +3,88 @@
 
 // Simple material structure for ray tracing
 struct Material {
-    glm::vec3 base_color;
-    float roughness;
-    glm::vec3 emission;
-    float metallic;
+
+    // Base Color
+    glm::vec3 base_color_factor;
+    int base_color_tex;
+
+    // Roughness, Metallic
+    float roughness_factor;
+    float metallic_factor;
+    int metallic_roughness_tex;
+
+    // Emission
+    glm::vec3 emissive_factor;
+    int emissive_texture;
+
+    // Occulusion
+    float AO_strength;
+    int AO_texture;
+
+    // Normal
+    float normal_scale;
+    int normal_texture;
+    
+    // Transmission, IOR
     float transmission;
     float ior;
-    int base_color_tex;
-    float base_color_tex_blend;
 
     Material()
-        : base_color(0.8f, 0.8f, 0.8f)
-        , roughness(0.5f)
-        , metallic(0.0f)
-        , emission(0.0f, 0.0f, 0.0f)
+        : base_color_factor(0.8f, 0.8f, 0.8f)
+        , base_color_tex(-1) 
+
+        , roughness_factor(0.5f)
+        , metallic_factor(0.0f)
+        , metallic_roughness_tex(-1)
+
+        , emissive_factor(0.0f, 0.0f, 0.0f)
+        , emissive_texture(-1)
+
+        , AO_strength(1.0f)
+        , AO_texture(-1)
+
+        , normal_scale(1.0f)
+        , normal_texture(-1)
+
         , transmission(0.0f)
-        , ior(1.45f)
-        , base_color_tex(-1)
-        , base_color_tex_blend(1.0f) {}
+        , ior(1.45f) {}
 
     Material(const glm::vec3& color,
+             int base_color_texture = -1,
+
              float rough = 0.5f, 
-             float metal = 0.0f, 
-             const glm::vec3& emit = glm::vec3(0.0f), 
+             float metal = 0.0f,
+             int metallic_roughness_texture = -1,
+
+             const glm::vec3& emissive = glm::vec3(0.0f),
+             int emissive_texture = -1,
+
+             float ao_strength = 1.0f,
+             int ao_texture = -1,
+
+             float normal_scale = 1.0f,
+             int normal_texture = -1,
+             
              float trans = 0.0f, 
-             float index_of_refraction = 1.45f, 
-             int base_color_texture = -1, 
-             float base_color_texture_blend = 1.0f)
-           : base_color(color)
-           , roughness(rough)
-           , metallic(metal)
-           , emission(emit)
+             float index_of_refraction = 1.45f
+             )
+           : base_color_factor(color)
+           , base_color_tex(base_color_texture) 
+
+           , roughness_factor(rough)
+           , metallic_factor(metal)
+           , metallic_roughness_tex(metallic_roughness_texture)
+
+           , emissive_factor(emissive)
+           , emissive_texture(emissive_texture)
+
+           , AO_strength(ao_strength)
+           , AO_texture(ao_texture)
+
+           , normal_scale(normal_scale)
+           , normal_texture(normal_texture)
+
            , transmission(trans)
-           , ior(index_of_refraction)
-           , base_color_tex(base_color_texture)
-           , base_color_tex_blend(base_color_texture_blend) {}
+           , ior(index_of_refraction) {}
 };
 

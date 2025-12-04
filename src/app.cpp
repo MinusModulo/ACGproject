@@ -220,7 +220,7 @@ void Application::OnInit() {
     scene_ = std::make_unique<Scene>(core_.get());
 
     // Call Load from glb function
-    scene_->LoadFromGLB("new.glb");
+    scene_->LoadFromGLB("new_scene.glb");
 
     // Build acceleration structures
     scene_->BuildAccelerationStructures();
@@ -297,6 +297,10 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE,
                                                    scene_->GetBaseColorTextureCount());          // space11 - base color textures
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_SAMPLER, 1);                 // space12 - sampler
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER,
+                                                             scene_->GetEntityCount());          // space13 - normal buffers
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER,
+                                                             scene_->GetEntityCount());          // space14 - tangent buffers
     program_->Finalize();
 }
 
@@ -702,13 +706,6 @@ void Application::RenderEntityPanel() {
         ImGui::SeparatorText("Material");
         Material mat = entity->GetMaterial();
         
-        ImGui::Text("Base Color:");
-        ImGui::ColorEdit3("##base_color", &mat.base_color[0], ImGuiColorEditFlags_NoInputs);
-        ImGui::Text("  RGB: (%.2f, %.2f, %.2f)", mat.base_color.r, mat.base_color.g, mat.base_color.b);
-        
-        ImGui::Text("Roughness: %.2f", mat.roughness);
-        ImGui::Text("Metallic: %.2f", mat.metallic);
-        
         ImGui::Spacing();
         
         // Mesh information
@@ -771,6 +768,8 @@ void Application::OnRender() {
     command_context->CmdBindResources(10, scene_->GetTexcoordBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(11, scene_->GetBaseColorTextureSRVs(), grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(12, { scene_->GetLinearWrapSampler() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(13, scene_->GetNormalBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(14, scene_->GetTangentBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdDispatchRays(window_->GetWidth(), window_->GetHeight(), 1);
 
     // When camera is disabled, increment sample count and use accumulated image

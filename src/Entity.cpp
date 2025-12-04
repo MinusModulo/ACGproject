@@ -23,6 +23,9 @@ Entity::~Entity() {
     blas_.reset();
     index_buffer_.reset();
     vertex_buffer_.reset();
+    normal_buffer_.reset();
+    tangent_buffer_.reset();
+    texcoord_buffer_.reset();
 }
 
 bool Entity::LoadMesh(const std::string& obj_file_path) {
@@ -61,6 +64,19 @@ void Entity::BuildBLAS(grassland::graphics::Core* core) {
                       grassland::graphics::BUFFER_TYPE_DYNAMIC, 
                       &index_buffer_);
     index_buffer_->UploadData(mesh_.Indices(), index_buffer_size);
+
+    // Create normal buffer
+    size_t normal_buffer_size = mesh_.NumVertices() * sizeof(glm::vec3);
+    core->CreateBuffer(normal_buffer_size, 
+                      grassland::graphics::BUFFER_TYPE_DYNAMIC, 
+                      &normal_buffer_);
+    normal_buffer_->UploadData(mesh_.Normals(), normal_buffer_size);
+
+    size_t tangent_buffer_size = mesh_.NumVertices() * sizeof(glm::vec3);
+    core->CreateBuffer(tangent_buffer_size, 
+                      grassland::graphics::BUFFER_TYPE_DYNAMIC, 
+                      &tangent_buffer_);
+    tangent_buffer_->UploadData(mesh_.Tangents(), tangent_buffer_size);
 
     // Build BLAS
     core->CreateBottomLevelAccelerationStructure(

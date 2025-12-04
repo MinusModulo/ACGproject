@@ -4,14 +4,24 @@ struct CameraInfo {
 };
 
 struct Material {
-  float3 base_color;
-  float roughness;
-  float3 emission;
-  float metallic;
+  float3 base_color_factor;
+  int base_color_tex;
+
+  float roughness_factor;
+  float metallic_factor;
+  int metallic_roughness_tex;
+
+  float3 emissive_factor;
+  int emissive_texture;
+  
+  float AO_strength;
+  int AO_texture;
+
+  float normal_scale;
+  int normal_texture;
+
   float transmission;
   float ior;
-  int base_color_tex;
-  float base_color_tex_blend; // This is used to blend between base color and texture, in case we both have them
 };
 
 struct HoverInfo {
@@ -33,8 +43,10 @@ RWTexture2D<int> accumulated_samples : register(u0, space7);
 StructuredBuffer<Vertex> Vertices[] : register(t0, space8);
 StructuredBuffer<int> Indices[]     : register(t0, space9);
 StructuredBuffer<float2> Texcoords[] : register(t0, space10);
-Texture2D<float4> BaseColorTextures[] : register(t0, space11);
+Texture2D<float4> Textures[] : register(t0, space11);
 SamplerState LinearWrap : register(s0, space12);
+StructuredBuffer<float3> Normals[] : register(t0, space13);
+StructuredBuffer<float3> Tangents[] : register(t0, space14);
 
 // Now we compute color in RayGenMain
 // So I define RayPayload accordingly
@@ -44,17 +56,21 @@ struct RayPayload {
 
   float3 position;
   float3 normal;
+
   float3 albedo;
 
   float roughness;
   float metallic;
+
   float3 emission;
-  
+
+  float ao;
+
   float transmission;
   float ior;
-  float front_face;
 
   float new_eps;
+  bool front_face;
 };
 
 static const float PI = 3.14159265359;
@@ -105,7 +121,7 @@ float G_Smith(float NdotV, float NdotL, float roughness) {
   return ggx1 * ggx2;
 }
 
-float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, float metallic) {
+float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, float metallic, float ao = 1.0) {
     float3 H = normalize(V + L);
     float NdotL = max(dot(N, L), 0.0);
     float NdotV = max(dot(N, V), 0.0);
@@ -123,7 +139,7 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
     
     float3 kS = F;
     float3 kD = (1.0 - kS) * (1.0 - metallic);
-    float3 diffuse = kD * albedo / PI;
+    float3 diffuse = kD * albedo / PI * ao;
 
     return diffuse + specular;
 }
@@ -329,7 +345,7 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
     if (cos_theta <= 0.0) break;
 
     // evaluate brdf and update throughput
-    float3 brdf = eval_brdf(N, next_dir, V, payload.albedo, payload.roughness, payload.metallic);
+    float3 brdf = eval_brdf(N, next_dir, V, payload.albedo, payload.roughness, payload.metallic, payload.ao);
 
     // This part remains the same, we do not change the coeff.
     throughput *= brdf * cos_theta / max(eps, pdf_total);
@@ -378,10 +394,64 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
   Vertex v1 = Vertices[material_idx][index1];
   Vertex v2 = Vertices[material_idx][index2];
 
-  // Calculate normal
-  float3 edge1 = v1.position - v0.position;
-  float3 edge2 = v2.position - v0.position;
-  float3 normal = normalize(cross(edge1, edge2));
+  // Use uv to get texcoords
+  float2 uv0 = Texcoords[material_idx][index0];
+  float2 uv1 = Texcoords[material_idx][index1];
+  float2 uv2 = Texcoords[material_idx][index2];
+
+  float2 bc = attr.barycentrics;
+  float3 bary = float3(1.0 - bc.x - bc.y, bc.x, bc.y);
+  float2 uv = uv0 * bary.x + uv1 * bary.y + uv2 * bary.z;
+
+  float3 base_color_tex = (mat.base_color_tex >= 0) ? Textures[mat.base_color_tex].SampleLevel(LinearWrap, uv, 0.0f).rgb : float3(1.0f, 1.0f, 1.0f);
+  float metallic_roughness_tex = (mat.metallic_roughness_tex >= 0) ? Textures[mat.metallic_roughness_tex].SampleLevel(LinearWrap, uv, 0.0f).b : 1.0f;
+  float roughness_tex = (mat.metallic_roughness_tex >= 0) ? Textures[mat.metallic_roughness_tex].SampleLevel(LinearWrap, uv, 0.0f).g : 1.0f;
+  float3 emissive_tex = (mat.emissive_texture >= 0) ? Textures[mat.emissive_texture].SampleLevel(LinearWrap, uv, 0.0f).rgb : float3(1.0f, 1.0f, 1.0f);
+  float AO_tex = (mat.AO_texture >= 0) ? Textures[mat.AO_texture].SampleLevel(LinearWrap, uv, 0.0f).r : 1.0f;
+
+  float3 base_color = mat.base_color_factor * base_color_tex;
+  float metallic = mat.metallic_factor * metallic_roughness_tex;
+  float roughness = mat.roughness_factor * roughness_tex;
+  float3 emission = mat.emissive_factor * emissive_tex;
+  float AO = 1.0 + (AO_tex - 1.0) * mat.AO_strength;
+
+  // Compute normal
+  float3 n0 = Normals[material_idx][index0];
+  float3 n1 = Normals[material_idx][index1];
+  float3 n2 = Normals[material_idx][index2];
+
+  float3 normal = float3(0.0, 0.0, 0.0);
+  if (length(n0) < 0.001 || length(n1) < 0.001 || length(n2) < 0.001) {
+    // use geometric normal
+    float3 edge1 = v1.position - v0.position;
+    float3 edge2 = v2.position - v0.position;
+    normal = normalize(cross(edge1, edge2));
+  } else {
+    // use interpolated normal
+    float2 bc = attr.barycentrics;
+    float3 bary = float3(1.0 - bc.x - bc.y, bc.x, bc.y);
+    normal = n0 * bary.x + n1 * bary.y + n2 * bary.z;
+    normal = normalize(normal);
+  }
+
+  if (mat.normal_texture >= 0) {
+
+    float3 tangent = Tangents[material_idx][index0] * bary.x +
+                     Tangents[material_idx][index1] * bary.y +
+                     Tangents[material_idx][index2] * bary.z;
+                     
+    tangent = normalize(tangent);
+    tangent = normalize(tangent - dot(tangent, normal) * normal); // orthogonalize
+
+    float3 bitangent = normalize(cross(normal, tangent));
+
+    float3 normal_map_sample = Textures[mat.normal_texture].SampleLevel(LinearWrap, uv, 0.0f).rgb;
+    normal_map_sample = normal_map_sample * 2.0 - 1.0;
+    normal_map_sample.xy *= mat.normal_scale;
+
+    // Transform normal from tangent space to world space
+    normal = normalize(normal_map_sample.x * tangent + normal_map_sample.y * bitangent + normal_map_sample.z * normal);
+  }
 
   float3 world_normal = normalize(mul(ObjectToWorld3x4(), float4(normal, 0.0)));
 
@@ -394,26 +464,15 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
   payload.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
   payload.normal = world_normal;
 
-  // Use uv to get texcoords
-   // 我想想,是不是其实应该是物体的 index 而不是材料的 index? 好像只是一个命名错误，mat_idx 应该就是物体的 index，所以没有问题
-  float2 uv0 = Texcoords[material_idx][index0];
-  float2 uv1 = Texcoords[material_idx][index1];
-  float2 uv2 = Texcoords[material_idx][index2];
+  payload.albedo = base_color;
 
-  float2 bc = attr.barycentrics;
-  float3 bary = float3(1.0 - bc.x - bc.y, bc.x, bc.y);
-  float2 uv = uv0 * bary.x + uv1 * bary.y + uv2 * bary.z;
+  payload.roughness = roughness;
+  payload.metallic = metallic;
 
-  float3 baseColorTex = mat.base_color;
-  if (mat.base_color_tex >= 0) { // if we have a texture
-    float3 texSample = BaseColorTextures[mat.base_color_tex].SampleLevel(LinearWrap, uv, 0.0f).rgb;
-    baseColorTex = lerp(mat.base_color, texSample, saturate(mat.base_color_tex_blend)); // If 1, then use full texture
-  }
+  payload.emission = emission;
 
-  payload.albedo = (float3)baseColorTex;
-  payload.roughness = mat.roughness;
-  payload.metallic = mat.metallic;
-  payload.emission = (float3)mat.emission;
+  payload.ao = AO;
+
   payload.transmission = mat.transmission;
   payload.ior = mat.ior;
   payload.new_eps = RayTCurrent() * 1e-4 + eps;

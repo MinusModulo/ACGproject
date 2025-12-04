@@ -23,6 +23,8 @@ void Scene::AddEntity(std::shared_ptr<Entity> entity) {
     entities_.push_back(entity);
     vertex_buffers_.push_back(entity->GetVertexBuffer());
     index_buffers_.push_back(entity->GetIndexBuffer());
+    normal_buffers_.push_back(entity->GetNormalBuffer());
+    tangent_buffers_.push_back(entity->GetTangentBuffer());
     grassland::LogInfo("Added entity to scene (total: {})", entities_.size());
 }
 
@@ -32,6 +34,11 @@ void Scene::Clear() {
     materials_buffer_.reset();
     vertex_buffers_.clear();
     index_buffers_.clear();
+    normal_buffers_.clear();
+    tangent_buffers_.clear();
+    texcoord_buffers_.clear();
+    base_color_srvs_.clear();
+    linear_wrap_sampler_ = nullptr;
 }
 
 void Scene::BuildAccelerationStructures() {
@@ -243,10 +250,12 @@ void Scene::LoadFromGLB(const std::string& gltf_path) {
         for (const auto &prim : mesh.primitives) {
 
             /*
-             * mesh理论上有 3 种东西。
+             * mesh理论上有 5 种东西。
              * pos 存储的是这个 mesh 的本地的所有顶点的位置。
              * uv 存储的是这个 mesh 的本地的所有顶点的纹理坐标。
              * indices 存储的是组成这个 mesh 的三角形的顶点索引，也是本地的。  
+             * 还有一直被我忘掉的法线。
+             * 还有我都没见过的 tangent, tkpl
              */
 
             // 1 : position, a vec3
@@ -297,16 +306,57 @@ void Scene::LoadFromGLB(const std::string& gltf_path) {
             const auto &idxBuf = model.buffers[idxView.buffer];
             const uint8_t *idxData = idxBuf.data.data() + idxView.byteOffset + idxAccessor.byteOffset;
 
-            // 3 个 data 的位置准备好了，开始一个一个读取。
-            const size_t vertex_count = posAccessor.count;
-            if (uvData) {
-                if (uvCount != vertex_count) {
-                    grassland::LogWarning("Not enough UVs for positions, expected {}, got {}", vertex_count, uvCount);
+            // 4 : normals
+
+            auto normalIt = prim.attributes.find("NORMAL");
+            const uint8_t *normalData = nullptr;
+            size_t normalStride = 0;
+            size_t normalCount = 0;
+            if (normalIt == prim.attributes.end()) {
+                grassland::LogWarning("Primitive missing NORMAL attribute, use default");
+            } else {
+                grassland::LogInfo("Found NORMAL attribute for node {}", node.name);
+                const auto &normalAccessor = model.accessors[normalIt->second];
+                const auto &normalView = model.bufferViews[normalAccessor.bufferView];
+                const auto &normalBuf = model.buffers[normalView.buffer];
+                normalData = normalBuf.data.data() + normalView.byteOffset + normalAccessor.byteOffset;
+                normalStride = normalAccessor.ByteStride(normalView);
+                if (normalStride <= 0) {
+                    grassland::LogWarning("Invalid NORMAL accessor byte stride, use default");
+                    normalStride = sizeof(float) * 3;
                 }
+                normalCount = normalAccessor.count;
             }
+
+            // 5 : tangent 
+
+            auto tangentIt = prim.attributes.find("TANGENT");
+            const uint8_t *tangentData = nullptr;
+            size_t tangentStride = 0;
+            size_t tangentCount = 0;
+            if (tangentIt == prim.attributes.end()) {
+                grassland::LogWarning("Primitive missing TANGENT attribute, use default");
+            } else {
+                grassland::LogInfo("Found TANGENT attribute for node {}", node.name);
+                const auto &tangentAccessor = model.accessors[tangentIt->second];
+                const auto &tangentView = model.bufferViews[tangentAccessor.bufferView];
+                const auto &tangentBuf = model.buffers[tangentView.buffer];
+                tangentData = tangentBuf.data.data() + tangentView.byteOffset + tangentAccessor.byteOffset;
+                tangentStride = tangentAccessor.ByteStride(tangentView);
+                if (tangentStride <= 0) {
+                    grassland::LogWarning("Invalid TANGENT accessor byte stride, use default");
+                    tangentStride = sizeof(float) * 4;
+                }
+                tangentCount = tangentAccessor.count;
+            }
+
+            // 5 个 data 的位置准备好了，开始一个一个读取。
+            const size_t vertex_count = posAccessor.count;
             std::vector<grassland::Vector3<float>> positions(vertex_count);
             std::vector<grassland::Vector2<float>> texcoords;
             std::vector<glm::vec2> upload_uvs;
+            std::vector<grassland::Vector3<float>> normals(vertex_count);
+            std::vector<grassland::Vector3<float>> tangents(vertex_count);
 
             if (uvData) {
                 texcoords.resize(vertex_count, grassland::Vector2<float>(0.0f, 0.0f));
@@ -322,6 +372,16 @@ void Scene::LoadFromGLB(const std::string& gltf_path) {
                     const float *q = reinterpret_cast<const float *>(uvData + i * uvStride);
                     texcoords[i] = grassland::Vector2<float>(q[0], q[1]);
                     upload_uvs[i] = glm::vec2(q[0], q[1]);
+                }
+                if (normalData && i < normalCount) {
+                    const float *n = reinterpret_cast<const float *>(normalData + i * normalStride);
+                    normals[i] = grassland::Vector3<float>(n[0], n[1], n[2]);
+                }
+                if (tangentData && i < tangentCount) {
+                    const float *t = reinterpret_cast<const float *>(tangentData + i * tangentStride);
+                    if (t[3] != 1.0f)
+                        grassland::LogWarning("Tangent w component is not 1.0f");
+                    tangents[i] = grassland::Vector3<float>(t[0], t[1], t[2]);
                 }
             }
 
@@ -347,31 +407,50 @@ void Scene::LoadFromGLB(const std::string& gltf_path) {
             } else {
                 const auto &gm = model.materials[prim.material];
                 /*
-                我要从 material 里拿出 4 个东西
+                我要从 material 里拿出
                 - baseColorFactor (vec4)
                 - roughnessFactor (float)
                 - metallicFactor (float)
+                - emissiveFactor (vec3)
                 - baseColorTexture (texture index)
+                - metallicRoughnessTexture (texture index)
+                - emissiveTexture (texture index)
+                - normalTexture (texture index)
                 */
                 const auto &pbrMR = gm.pbrMetallicRoughness;
                 glm::vec3 baseColor = glm::vec3(pbrMR.baseColorFactor[0], pbrMR.baseColorFactor[1], pbrMR.baseColorFactor[2]);
                 float rough = pbrMR.roughnessFactor;
                 float metallic = pbrMR.metallicFactor;
-                int texIndex = pbrMR.baseColorTexture.index;
+                glm::vec3 emissive = glm::vec3(gm.emissiveFactor[0], gm.emissiveFactor[1], gm.emissiveFactor[2]);
+                int baseColTexIndex = pbrMR.baseColorTexture.index;
+                int metalRoughTexIndex = pbrMR.metallicRoughnessTexture.index;
+                int emissiveTexIndex = gm.emissiveTexture.index;
+                float aoStrength = gm.occlusionTexture.strength;
+                int aoTexIndex = gm.occlusionTexture.index;
+                int normalTexIndex = gm.normalTexture.index;
+                float normalScale = gm.normalTexture.scale;
 
-                mat = Material(baseColor, rough, metallic);
-                mat.base_color_tex = texIndex;
+                mat = Material(
+                    baseColor, baseColTexIndex, 
+                    rough, metallic, metalRoughTexIndex,
+                    emissive, emissiveTexIndex, 
+                    aoStrength, aoTexIndex,
+                    normalScale, normalTexIndex,
+                    0.0f, 1.45f
+                );
             }
 
             const grassland::Vector2<float> *texcoord_ptr = texcoords.empty() ? nullptr : texcoords.data();
+            const grassland::Vector3<float> *normal_ptr = normals.empty() ? nullptr : normals.data();
+            const grassland::Vector3<float> *tangent_ptr = tangents.empty() ? nullptr : tangents.data();
             grassland::Mesh<float> mesh_asset(
                 vertex_count,
                 indices.size(),
                 indices.data(),
                 positions.data(),
-                nullptr,
+                normal_ptr,
                 texcoord_ptr,
-                nullptr);
+                tangent_ptr);
 
             auto entity = std::make_shared<Entity>(mesh_asset, mat, transform);
             AddEntity(entity);

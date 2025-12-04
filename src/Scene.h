@@ -53,8 +53,14 @@ public:
     // Get all index buffers
     std::vector<grassland::graphics::Buffer*> GetIndexBuffers() const { return index_buffers_; }
 
+    // Get all normal buffers
+    std::vector<grassland::graphics::Buffer*> GetNormalBuffers() const { return normal_buffers_; }
+
     // Get all texcoord buffers
     std::vector<grassland::graphics::Buffer*> GetTexcoordBuffers() const { return texcoord_buffers_; }
+
+    // Get all tangent buffers
+    std::vector<grassland::graphics::Buffer*> GetTangentBuffers() const { return tangent_buffers_; }
 
     // Get base color texture count
     size_t GetBaseColorTextureCount() const { return base_color_srvs_.size(); }
@@ -83,6 +89,8 @@ private:
     std::unique_ptr<grassland::graphics::Buffer> materials_buffer_;
     std::vector<grassland::graphics::Buffer*> vertex_buffers_;
     std::vector<grassland::graphics::Buffer*> index_buffers_;
+    std::vector<grassland::graphics::Buffer*> normal_buffers_;
+    std::vector<grassland::graphics::Buffer*> tangent_buffers_;
     std::vector<grassland::graphics::Buffer*> texcoord_buffers_;
     std::vector<grassland::graphics::Image*> base_color_srvs_;
     grassland::graphics::Sampler* linear_wrap_sampler_ = nullptr;
