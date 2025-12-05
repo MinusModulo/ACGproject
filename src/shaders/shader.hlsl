@@ -435,7 +435,7 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
   float3 base_color = mat.base_color_factor.rgb * base_color_tex;
   float alpha = mat.base_color_factor.a * alpha_tex;
   float metallic = mat.metallic_factor * metallic_roughness_tex;
-  float roughness = mat.roughness_factor * roughness_tex;
+  float roughness = max(0.1f, mat.roughness_factor * roughness_tex);
   float3 emission = mat.emissive_factor * emissive_tex;
   float AO = 1.0 + (AO_tex - 1.0) * mat.AO_strength;
 
