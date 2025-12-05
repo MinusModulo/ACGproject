@@ -401,7 +401,7 @@ void Scene::LoadFromGLB(const std::string& gltf_path) {
             }
 
             // 最后, the material
-            Material mat(glm::vec3(1.0f), 0.5f, 0.0f);
+            Material mat(glm::vec4(1.0f), 0.5f, 0.0f);
             if (prim.material < 0 || prim.material >= static_cast<int>(model.materials.size())) {
                 grassland::LogWarning("Primitive has no material, use default");
             } else {
@@ -416,9 +416,10 @@ void Scene::LoadFromGLB(const std::string& gltf_path) {
                 - metallicRoughnessTexture (texture index)
                 - emissiveTexture (texture index)
                 - normalTexture (texture index)
+                - alphaMode (string)
                 */
                 const auto &pbrMR = gm.pbrMetallicRoughness;
-                glm::vec3 baseColor = glm::vec3(pbrMR.baseColorFactor[0], pbrMR.baseColorFactor[1], pbrMR.baseColorFactor[2]);
+                glm::vec4 baseColor = glm::vec4(pbrMR.baseColorFactor[0], pbrMR.baseColorFactor[1], pbrMR.baseColorFactor[2], pbrMR.baseColorFactor[3]);
                 float rough = pbrMR.roughnessFactor;
                 float metallic = pbrMR.metallicFactor;
                 glm::vec3 emissive = glm::vec3(gm.emissiveFactor[0], gm.emissiveFactor[1], gm.emissiveFactor[2]);
@@ -430,12 +431,22 @@ void Scene::LoadFromGLB(const std::string& gltf_path) {
                 int normalTexIndex = gm.normalTexture.index;
                 float normalScale = gm.normalTexture.scale;
 
+                int alphaMode = 0;
+                if (gm.alphaMode == "MASK") {
+                    alphaMode = 1;
+                } else if (gm.alphaMode == "BLEND") {
+                    alphaMode = 2;
+                } else {
+                    alphaMode = 0;
+                }
+
                 mat = Material(
                     baseColor, baseColTexIndex, 
                     rough, metallic, metalRoughTexIndex,
                     emissive, emissiveTexIndex, 
                     aoStrength, aoTexIndex,
                     normalScale, normalTexIndex,
+                    alphaMode,
                     0.0f, 1.45f
                 );
             }

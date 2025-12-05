@@ -220,7 +220,7 @@ void Application::OnInit() {
     scene_ = std::make_unique<Scene>(core_.get());
 
     // Call Load from glb function
-    scene_->LoadFromGLB("new_scene.glb");
+    scene_->LoadFromGLB("test_scene.glb");
 
     // Build acceleration structures
     scene_->BuildAccelerationStructures();

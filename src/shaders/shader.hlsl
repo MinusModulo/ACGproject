@@ -4,7 +4,7 @@ struct CameraInfo {
 };
 
 struct Material {
-  float3 base_color_factor;
+  float4 base_color_factor;
   int base_color_tex;
 
   float roughness_factor;
@@ -19,6 +19,8 @@ struct Material {
 
   float normal_scale;
   int normal_texture;
+
+  int alpha_mode; // 0: OPAQUE, 1: MASK, 2: BLEND
 
   float transmission;
   float ior;
@@ -68,6 +70,9 @@ struct RayPayload {
 
   float transmission;
   float ior;
+
+  int alpha_mode;
+  float alpha;
 
   float new_eps;
   bool front_face;
@@ -285,6 +290,23 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
       }
     }
 
+    // alphaMode test :
+    if (payload.alpha_mode == 2) { // BLEND
+      if (rand(rng_state) > payload.alpha) {
+        // skip this intersection, continue tracing
+        ray.Origin = payload.position + ray.Direction * payload.new_eps;
+        depth += 1;
+        continue;
+      }
+    } else if (payload.alpha_mode == 1) { // MASK
+      if (payload.alpha < 0.5) {
+        // skip this intersection, continue tracing
+        ray.Origin = payload.position + ray.Direction * payload.new_eps;
+        depth += 1;
+        continue;
+      }
+    }
+
     // otherwise, let N be the normal
     float3 N = payload.normal;
 
@@ -404,12 +426,14 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
   float2 uv = uv0 * bary.x + uv1 * bary.y + uv2 * bary.z;
 
   float3 base_color_tex = (mat.base_color_tex >= 0) ? Textures[mat.base_color_tex].SampleLevel(LinearWrap, uv, 0.0f).rgb : float3(1.0f, 1.0f, 1.0f);
+  float alpha_tex = (mat.base_color_tex >= 0) ? Textures[mat.base_color_tex].SampleLevel(LinearWrap, uv, 0.0f).a : 1.0f;
   float metallic_roughness_tex = (mat.metallic_roughness_tex >= 0) ? Textures[mat.metallic_roughness_tex].SampleLevel(LinearWrap, uv, 0.0f).b : 1.0f;
   float roughness_tex = (mat.metallic_roughness_tex >= 0) ? Textures[mat.metallic_roughness_tex].SampleLevel(LinearWrap, uv, 0.0f).g : 1.0f;
   float3 emissive_tex = (mat.emissive_texture >= 0) ? Textures[mat.emissive_texture].SampleLevel(LinearWrap, uv, 0.0f).rgb : float3(1.0f, 1.0f, 1.0f);
   float AO_tex = (mat.AO_texture >= 0) ? Textures[mat.AO_texture].SampleLevel(LinearWrap, uv, 0.0f).r : 1.0f;
 
-  float3 base_color = mat.base_color_factor * base_color_tex;
+  float3 base_color = mat.base_color_factor.rgb * base_color_tex;
+  float alpha = mat.base_color_factor.a * alpha_tex;
   float metallic = mat.metallic_factor * metallic_roughness_tex;
   float roughness = mat.roughness_factor * roughness_tex;
   float3 emission = mat.emissive_factor * emissive_tex;
@@ -434,31 +458,31 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
     normal = normalize(normal);
   }
 
-  if (mat.normal_texture >= 0) {
-
-    float3 tangent = Tangents[material_idx][index0] * bary.x +
-                     Tangents[material_idx][index1] * bary.y +
-                     Tangents[material_idx][index2] * bary.z;
-                     
-    tangent = normalize(tangent);
-    tangent = normalize(tangent - dot(tangent, normal) * normal); // orthogonalize
-
-    float3 bitangent = normalize(cross(normal, tangent));
-
-    float3 normal_map_sample = Textures[mat.normal_texture].SampleLevel(LinearWrap, uv, 0.0f).rgb;
-    normal_map_sample = normal_map_sample * 2.0 - 1.0;
-    normal_map_sample.xy *= mat.normal_scale;
-
-    // Transform normal from tangent space to world space
-    normal = normalize(normal_map_sample.x * tangent + normal_map_sample.y * bitangent + normal_map_sample.z * normal);
-  }
-
   float3 world_normal = normalize(mul(ObjectToWorld3x4(), float4(normal, 0.0)));
 
   payload.front_face = true;
   if (dot(world_normal, WorldRayDirection()) > 0.0) {
     world_normal = -world_normal;
     payload.front_face = false;
+  }
+
+  if (mat.normal_texture >= 0) {
+    float3 tangent = normalize(Tangents[material_idx][index0] * bary.x +
+                     Tangents[material_idx][index1] * bary.y +
+                     Tangents[material_idx][index2] * bary.z);
+
+    float3 world_tangent = normalize(mul((float3x3)ObjectToWorld3x4(), tangent));
+
+    world_tangent = normalize(world_tangent - dot(world_tangent, world_normal) * world_normal);
+
+    float3 world_bitangent = normalize(cross(world_normal, world_tangent));
+
+    float3 normal_map_sample = Textures[mat.normal_texture].SampleLevel(LinearWrap, uv, 0.0f).rgb;
+    normal_map_sample = normal_map_sample * 2.0 - 1.0;
+    normal_map_sample.xy *= mat.normal_scale;
+
+    // Transform normal from tangent space to world space
+    world_normal = normalize(normal_map_sample.x * world_tangent + normal_map_sample.y * world_bitangent + normal_map_sample.z * world_normal);
   }
 
   payload.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
@@ -476,4 +500,7 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
   payload.transmission = mat.transmission;
   payload.ior = mat.ior;
   payload.new_eps = RayTCurrent() * 1e-4 + eps;
+  
+  payload.alpha_mode = mat.alpha_mode;
+  payload.alpha = alpha;
 }
