@@ -43,6 +43,7 @@ private:
     // Hover info buffer
     struct HoverInfo {
         int hovered_entity_id;
+        int light_count;
     };
     std::unique_ptr<grassland::graphics::Buffer> hover_info_buffer_;
 

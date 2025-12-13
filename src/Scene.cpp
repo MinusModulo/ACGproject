@@ -27,11 +27,21 @@ void Scene::AddEntity(std::shared_ptr<Entity> entity) {
     tangent_buffers_.push_back(entity->GetTangentBuffer());
     grassland::LogInfo("Added entity to scene (total: {})", entities_.size());
 }
+void Scene::AddLight(const Light& light) {
+    lights_.push_back(light);
+    UpdateLightsBuffer();
+}
 
+void Scene::ClearLights() {
+    lights_.clear();
+    lights_buffer_.reset();
+}
 void Scene::Clear() {
     entities_.clear();
+    lights_.clear();
     tlas_.reset();
     materials_buffer_.reset();
+    lights_buffer_.reset();
     vertex_buffers_.clear();
     index_buffers_.clear();
     normal_buffers_.clear();
@@ -107,6 +117,26 @@ void Scene::UpdateInstances() {
     // Update TLAS
     tlas_->UpdateInstances(instances);
 }
+
+void Scene::UpdateLightsBuffer() {
+    if (lights_.empty()) {
+        lights_buffer_.reset();
+        return;
+    }
+	// Create/update lights buffer
+	size_t buffer_size = lights_.size() * sizeof(Light);
+	buffer_size = std::max(buffer_size, sizeof(Light)); // Ensure non-zero size
+
+	if (!lights_buffer_) {
+		core_->CreateBuffer(buffer_size,
+			grassland::graphics::BUFFER_TYPE_DYNAMIC,
+			&lights_buffer_);
+	}
+
+	lights_buffer_->UploadData(lights_.data(), buffer_size);
+	grassland::LogInfo("Updated lights buffer with {} lights", lights_.size());
+}
+
 
 void Scene::UpdateMaterialsBuffer() {
     if (entities_.empty()) {

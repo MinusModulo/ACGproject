@@ -220,8 +220,23 @@ void Application::OnInit() {
     scene_ = std::make_unique<Scene>(core_.get());
 
     // Call Load from glb function
-    scene_->LoadFromGLB("test_scene.glb");
+    scene_->LoadFromGLB("new_scene.glb");
 
+    // Add some default lights
+    Light pointLight;
+    pointLight.type = LIGHT_POINT;
+    pointLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
+    pointLight.intensity = 30.0f;
+    pointLight.position = glm::vec3(2.88f, 2.30f, 1.86f);
+    scene_->AddLight(pointLight);
+    /*
+    Light sunLight;
+    sunLight.type = LIGHT_SUN;
+    sunLight.color = glm::vec3(1.0f, 0.95f, 0.8f);
+    sunLight.intensity = 1.0f;
+    sunLight.direction = glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f));
+    scene_->AddLight(sunLight);
+    */
     // Build acceleration structures
     scene_->BuildAccelerationStructures();
 
@@ -237,12 +252,13 @@ void Application::OnInit() {
     core_->CreateBuffer(sizeof(HoverInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &hover_info_buffer_);
     HoverInfo initial_hover{};
     initial_hover.hovered_entity_id = -1;
+    initial_hover.light_count = static_cast<int>(scene_->GetLightCount());
     hover_info_buffer_->UploadData(&initial_hover, sizeof(HoverInfo));
 
     // Initialize camera state member variables
     camera_pos_ = glm::vec3{ 0.0f, 1.0f, 5.0f };
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
-    camera_speed_ = 0.01f;
+    camera_speed_ = 0.1f;
 
     // Initialize new mouse/view variables
     yaw_ = -90.0f; // Point down -Z
@@ -301,6 +317,7 @@ void Application::OnInit() {
                                                              scene_->GetEntityCount());          // space13 - normal buffers
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER,
                                                              scene_->GetEntityCount());          // space14 - tangent buffers
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space15 - lights buffer
     program_->Finalize();
 }
 
@@ -405,6 +422,7 @@ void Application::OnUpdate() {
         // Update hover info buffer
         HoverInfo hover_info{};
         hover_info.hovered_entity_id = hovered_entity_id_;
+        hover_info.light_count = scene_->GetLightCount();
         hover_info_buffer_->UploadData(&hover_info, sizeof(HoverInfo));
 
         // Update the camera buffer with new position/orientation
@@ -770,6 +788,7 @@ void Application::OnRender() {
     command_context->CmdBindResources(12, { scene_->GetLinearWrapSampler() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(13, scene_->GetNormalBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(14, scene_->GetTangentBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
+	command_context->CmdBindResources(15, { scene_->GetLightsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdDispatchRays(window_->GetWidth(), window_->GetHeight(), 1);
 
     // When camera is disabled, increment sample count and use accumulated image

@@ -28,6 +28,18 @@ struct Material {
 
 struct HoverInfo {
   int hovered_entity_id;
+  int light_count;
+};
+
+struct Light {
+  int type;
+  float3 color;
+  float intensity;
+
+  float3 position;
+  float3 direction;
+  float3 u;
+  float3 v;
 };
 
 struct Vertex {
@@ -49,6 +61,7 @@ Texture2D<float4> Textures[] : register(t0, space11);
 SamplerState LinearWrap : register(s0, space12);
 StructuredBuffer<float3> Normals[] : register(t0, space13);
 StructuredBuffer<float3> Tangents[] : register(t0, space14);
+StructuredBuffer<Light> Lights : register(t0, space15);
 
 // Now we compute color in RayGenMain
 // So I define RayPayload accordingly
@@ -76,10 +89,14 @@ struct RayPayload {
 
   float new_eps;
   bool front_face;
+  
+  // Light contribution
+  float3 direct_light;
 };
 
 static const float PI = 3.14159265359;
 static const float eps = 1e-6;
+static const uint RAY_TYPE_SHADOW = 1;
 
 // We need rand variables for Monte Carlo integration
 // I leverage a simple Wang Hash + Xorshift RNG combo here
@@ -101,6 +118,52 @@ uint rand_xorshift(inout uint rng_state) {
 
 float rand(inout uint rng_state) {
   return float(rand_xorshift(rng_state)) * (1.0 / 4294967296.0);
+}
+
+// Light sampling functions
+float3 SamplePointLight(Light light, float3 position, out float3 light_dir) {
+  light_dir = normalize(light.position - position);
+  float dist_sq = dot(light.position - position, light.position - position);
+  return light.color * light.intensity / dist_sq;
+}
+
+struct ShadowPayload {
+    bool hit;
+};
+
+
+bool CastShadowRay(float3 origin, float3 direction, float max_distance) {
+    RayDesc shadow_ray;
+    shadow_ray.Origin = origin;
+    shadow_ray.Direction = direction;
+    shadow_ray.TMin = eps;
+    shadow_ray.TMax = max_distance;
+
+    ShadowPayload shadow_payload;
+    shadow_payload.hit = false;
+
+    TraceRay(as, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, RAY_TYPE_SHADOW, 1, 0, shadow_ray, shadow_payload);
+
+    return shadow_payload.hit;
+}//1= hit
+
+float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, float metallic, float ao);
+
+float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_dir, float3 albedo, float roughness, float metallic, float ao,inout uint rng_state) {
+  float3 direct_light = float3(0.0, 0.0, 0.0);
+  
+  if (light.type == 0) { // POINT_LIGHT
+      float3 light_dir;
+      float pdf;
+      float3 radiance = SamplePointLight(light, position, light_dir);
+
+      float NdotL = max(dot(normal, light_dir), 0.0);
+      if (NdotL > 0.0) {
+          direct_light = eval_brdf(normal, light_dir, view_dir, albedo, roughness, metallic,ao) * radiance * NdotL * (1.0 - (float)CastShadowRay(position + normal * eps, light_dir, length(light.position - position) - eps));
+      }
+  }
+  
+  return direct_light;
 }
 
 float3 F_Schlick(float3 f0, float u) {
@@ -235,6 +298,7 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
     }
 
     radiance += throughput * payload.emission; // emissive term
+    radiance += throughput * payload.direct_light; // direct lighting
 
     // transmission
     if (payload.transmission > 0.0) {
@@ -503,4 +567,17 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
   
   payload.alpha_mode = mat.alpha_mode;
   payload.alpha = alpha;
+  
+  // Calculate direct lighting
+  payload.direct_light = float3(0.0, 0.0, 0.0);
+  float3 view_dir = -normalize(WorldRayDirection());
+  
+  // For now, use a simple RNG seed based on position
+  uint light_rng = wang_hash(asuint(payload.position.x) ^ wang_hash(asuint(payload.position.y)) ^ wang_hash(asuint(payload.position.z)));
+  
+  // Sample all lights
+  for (uint i = 0; i < hover_info.light_count; ++i) {
+    Light light = Lights[i];
+    payload.direct_light += EvaluateLight(light, payload.position, payload.normal, view_dir, payload.albedo, payload.roughness, payload.metallic, payload.ao, light_rng);
+  }
 }
