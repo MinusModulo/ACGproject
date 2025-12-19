@@ -25,6 +25,7 @@ void Scene::AddEntity(std::shared_ptr<Entity> entity) {
     index_buffers_.push_back(entity->GetIndexBuffer());
     normal_buffers_.push_back(entity->GetNormalBuffer());
     tangent_buffers_.push_back(entity->GetTangentBuffer());
+    texcoord_buffers_.push_back(entity->GetTexcoordBuffer());
     grassland::LogInfo("Added entity to scene (total: {})", entities_.size());
 }
 void Scene::AddLight(const Light& light) {
@@ -162,22 +163,6 @@ void Scene::UpdateMaterialsBuffer() {
     
     materials_buffer_->UploadData(materials.data(), buffer_size);
     grassland::LogInfo("Updated materials buffer with {} materials", materials.size());
-}
-
-void Scene::CreateAndAttachTexcoordBuffer(const std::vector<glm::vec2>& uvs) {
-    if (uvs.empty()) {
-        grassland::LogError("Cannot create texcoord buffer: invalid entity or empty UVs");
-        return;
-    }
-
-    grassland::graphics::Buffer* texcoord_buffer = nullptr;
-    size_t buffer_size = uvs.size() * sizeof(glm::vec2);
-    core_->CreateBuffer(buffer_size, 
-                      grassland::graphics::BUFFER_TYPE_DYNAMIC, 
-                      &texcoord_buffer);
-    texcoord_buffer->UploadData(uvs.data(), buffer_size);
-
-    texcoord_buffers_.push_back(texcoord_buffer);
 }
 
 void Scene::BuildSampler() {
@@ -495,7 +480,6 @@ void Scene::LoadFromGLB(const std::string& gltf_path) {
 
             auto entity = std::make_shared<Entity>(mesh_asset, mat, transform);
             AddEntity(entity);
-            CreateAndAttachTexcoordBuffer(upload_uvs);
         }
     }
 

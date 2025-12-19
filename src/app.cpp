@@ -261,14 +261,11 @@ void Application::OnInit() {
     
     scene_->AddEntity(glassSphere);
 
-    
+    */
     // Add entities to the scene
     // Ground plane - a cube scaled to be flat
     {
-        Material groundMat;
-        groundMat.base_color_factor = glm::vec4(0.8f, 0.8f, 0.8f, 1.0f);
-        groundMat.roughness_factor = 0.8f;
-        groundMat.metallic_factor = 0.0f;
+        Material groundMat=Material();
 
         auto ground = std::make_shared<Entity>(
             "meshes/cube.obj",
@@ -278,7 +275,7 @@ void Application::OnInit() {
         );
         scene_->AddEntity(ground);
     }
-
+    /*
     // Red sphere (using octahedron as sphere substitute)
     {
         Material redMat;

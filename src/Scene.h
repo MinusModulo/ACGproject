@@ -97,7 +97,7 @@ public:
     size_t GetBaseColorTextureCount() const { return base_color_srvs_.size(); }
     
     // Follow the order of entity, create and attach texcoord buffer
-    void CreateAndAttachTexcoordBuffer(const std::vector<glm::vec2>& uvs);
+    //void CreateAndAttachTexcoordBuffer(const std::vector<glm::vec2>& uvs);
 
     // Get base color texture SRV array
     std::vector<grassland::graphics::Image*> GetBaseColorTextureSRVs() const { return base_color_srvs_; }

@@ -70,13 +70,37 @@ void Entity::BuildBLAS(grassland::graphics::Core* core) {
     core->CreateBuffer(normal_buffer_size, 
                       grassland::graphics::BUFFER_TYPE_DYNAMIC, 
                       &normal_buffer_);
-    normal_buffer_->UploadData(mesh_.Normals(), normal_buffer_size);
+    if (mesh_.Normals()) {
+        normal_buffer_->UploadData(mesh_.Normals(), normal_buffer_size);
+    } else {
+        std::vector<glm::vec3> default_normals(mesh_.NumVertices(), glm::vec3(0.0f, 1.0f, 0.0f));
+        normal_buffer_->UploadData(default_normals.data(), normal_buffer_size);
+    }
 
+    // Create tangent buffer
     size_t tangent_buffer_size = mesh_.NumVertices() * sizeof(glm::vec3);
     core->CreateBuffer(tangent_buffer_size, 
                       grassland::graphics::BUFFER_TYPE_DYNAMIC, 
                       &tangent_buffer_);
-    tangent_buffer_->UploadData(mesh_.Tangents(), tangent_buffer_size);
+    if (mesh_.Tangents()) {
+        tangent_buffer_->UploadData(mesh_.Tangents(), tangent_buffer_size);
+    } else {
+        std::vector<glm::vec3> default_tangents(mesh_.NumVertices(), glm::vec3(1.0f, 0.0f, 0.0f));
+        tangent_buffer_->UploadData(default_tangents.data(), tangent_buffer_size);
+    }
+
+    // Create texcoord buffer
+    size_t texcoord_buffer_size = mesh_.NumVertices() * sizeof(glm::vec2);
+    core->CreateBuffer(texcoord_buffer_size, 
+                      grassland::graphics::BUFFER_TYPE_DYNAMIC, 
+                      &texcoord_buffer_);
+    
+    if (mesh_.TexCoords()) {
+        texcoord_buffer_->UploadData(mesh_.TexCoords(), texcoord_buffer_size);
+    } else {
+        std::vector<glm::vec2> default_uvs(mesh_.NumVertices(), glm::vec2(0.0f));
+        texcoord_buffer_->UploadData(default_uvs.data(), texcoord_buffer_size);
+    }
 
     // Build BLAS
     core->CreateBottomLevelAccelerationStructure(
