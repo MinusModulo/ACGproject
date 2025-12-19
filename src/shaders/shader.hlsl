@@ -92,6 +92,8 @@ struct RayPayload {
   
   // Light contribution
   float3 direct_light;
+
+  uint rng_state;
 };
 
 static const float PI = 3.14159265359;
@@ -118,18 +120,38 @@ uint rand_xorshift(inout uint rng_state) {
 
 float rand(inout uint rng_state) {
   return float(rand_xorshift(rng_state)) * (1.0 / 4294967296.0);
-}
+} //rand will change rng_state
 
 // Light sampling functions
-float3 SamplePointLight(Light light, float3 position, out float3 light_dir) {
+float3 SamplePointLight(Light light, float3 position, out float3 light_dir, inout float pdf) {
   light_dir = normalize(light.position - position);
+  pdf = 1.0f;
   float dist_sq = dot(light.position - position, light.position - position);
   return light.color * light.intensity / dist_sq;
 }
 
+float3 SampleAreaLight(Light light, float3 position, out float3 light_dir, inout float pdf, inout float3 sampled_point, inout uint rng_state) {
+	// Sample a point on the area light
+    float u1 = rand(rng_state);
+	float u2 = rand(rng_state);
+
+	sampled_point = light.position + (u1 - 0.5f) * light.u + (u2 - 0.5f) * light.v;
+	light_dir = normalize(sampled_point - position);
+
+	float area = length(cross(light.u, light.v));
+	float dist_sq = dot(sampled_point - position, sampled_point - position);
+	float cos_theta = max(dot(-light_dir, normalize(light.direction)), 0.0f);
+
+	pdf = dist_sq / (area * cos_theta + eps);
+
+	return light.color * light.intensity;
+}
+
+
 struct ShadowPayload {
     bool hit;
 };
+
 
 
 bool CastShadowRay(float3 origin, float3 direction, float max_distance) {
@@ -152,16 +174,27 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
 float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_dir, float3 albedo, float roughness, float metallic, float ao,inout uint rng_state) {
   float3 direct_light = float3(0.0, 0.0, 0.0);
   
-  if (light.type == 0) { // POINT_LIGHT
+    // POINT_LIGHT
       float3 light_dir;
+      float3 radiance;
       float pdf;
-      float3 radiance = SamplePointLight(light, position, light_dir);
-
+      float max_distance;
+      if (light.type == 0) {
+          radiance = SamplePointLight(light, position, light_dir, pdf);
+          max_distance = length(light.position - position);
+      }
+	  else if (light.type == 1) {
+		  float3 sampled_point;
+		  radiance = SampleAreaLight(light, position, light_dir, pdf, sampled_point, rng_state);
+          max_distance = length(sampled_point - position);
+	  }
       float NdotL = max(dot(normal, light_dir), 0.0);
       if (NdotL > 0.0) {
-          direct_light = eval_brdf(normal, light_dir, view_dir, albedo, roughness, metallic,ao) * radiance * NdotL * (1.0 - (float)CastShadowRay(position + normal * eps, light_dir, length(light.position - position) - eps));
+          float3 brdf = eval_brdf(normal, light_dir, view_dir, albedo, roughness, metallic, ao);
+          float visible = (1.0 - (float)CastShadowRay(position + normal * eps, light_dir, max_distance - eps));
+		  direct_light =  brdf* radiance * NdotL * visible / max(eps, pdf);
       }
-  }
+  
   
   return direct_light;
 }
@@ -272,6 +305,7 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
   RayPayload payload;
   float3 throughput = float3(1.0, 1.0, 1.0);
   float3 radiance = float3(0.0, 0.0, 0.0);
+  payload.rng_state = rng_state;
 
   // core of path tracing
 
@@ -282,6 +316,9 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
     // we trace a ray
     payload.hit = false;
     TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 1, 0, ray, payload);
+
+    rng_state = payload.rng_state; 
+    // TraceRay -> ClosestHitMain -> EvaluateLight -> rand -> rand_xorshift changes rng_state
 
     // record the id of this entity, if hit
     if (depth == 0) {
@@ -572,12 +609,9 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
   payload.direct_light = float3(0.0, 0.0, 0.0);
   float3 view_dir = -normalize(WorldRayDirection());
   
-  // For now, use a simple RNG seed based on position
-  uint light_rng = wang_hash(asuint(payload.position.x) ^ wang_hash(asuint(payload.position.y)) ^ wang_hash(asuint(payload.position.z)));
-  
   // Sample all lights
   for (uint i = 0; i < hover_info.light_count; ++i) {
     Light light = Lights[i];
-    payload.direct_light += EvaluateLight(light, payload.position, payload.normal, view_dir, payload.albedo, payload.roughness, payload.metallic, payload.ao, light_rng);
+    payload.direct_light += EvaluateLight(light, payload.position, payload.normal, view_dir, payload.albedo, payload.roughness, payload.metallic, payload.ao, payload.rng_state);
   }
 }

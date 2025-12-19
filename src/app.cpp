@@ -223,12 +223,108 @@ void Application::OnInit() {
     scene_->LoadFromGLB("new_scene.glb");
 
     // Add some default lights
+    // Temporarily remove point light and add area light nearby
+    /*
     Light pointLight;
     pointLight.type = LIGHT_POINT;
     pointLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
-    pointLight.intensity = 30.0f;
-    pointLight.position = glm::vec3(2.88f, 2.30f, 1.86f);
+    pointLight.intensity = 10.0f;
+    pointLight.position = glm::vec3(3.5f, 1.2f, 1.0f);
     scene_->AddLight(pointLight);
+    */
+    
+    Light areaLight;
+    areaLight.type = LIGHT_AREA; // Area light
+    areaLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
+    areaLight.intensity = 30.0f;
+    areaLight.position = glm::vec3(2.4f, 1.2f, 1.0f); // Near the original point light position
+    areaLight.direction = glm::vec3(-1.0f, 0.0f, 0.0f); 
+    areaLight.u = glm::vec3(2.0f, 0.0f, 0.0f); // Width vector
+    areaLight.v = glm::vec3(0.0f, 0.0f, 2.0f); // Height vector
+    scene_->AddLight(areaLight);
+    /*
+    // Add glass sphere around the area light
+    Material glassMaterial;
+    glassMaterial.base_color_factor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+    glassMaterial.roughness_factor = 0.01f;
+    glassMaterial.metallic_factor = 0.0f;
+    glassMaterial.transmission = 0.95f;
+    glassMaterial.ior = 1.45f;
+    
+    std::shared_ptr<Entity> glassSphere = std::make_shared<Entity>("external/LongMarch/assets/meshes/preview_sphere.obj", glassMaterial);
+    
+    // Set transform: Position at area light, Scale to enclose it
+    glm::mat4 transform = glm::mat4(1.0f);
+    transform = glm::translate(transform, areaLight.position);
+    transform = glm::scale(transform, glm::vec3(1.5f)); // Radius 1.5 should cover 2x2 square (diagonal ~1.414)
+    glassSphere->SetTransform(transform);
+    
+    scene_->AddEntity(glassSphere);
+
+    
+    // Add entities to the scene
+    // Ground plane - a cube scaled to be flat
+    {
+        Material groundMat;
+        groundMat.base_color_factor = glm::vec4(0.8f, 0.8f, 0.8f, 1.0f);
+        groundMat.roughness_factor = 0.8f;
+        groundMat.metallic_factor = 0.0f;
+
+        auto ground = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            groundMat,
+            glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -1.0f, 0.0f)), 
+                      glm::vec3(10.0f, 0.1f, 10.0f))
+        );
+        scene_->AddEntity(ground);
+    }
+
+    // Red sphere (using octahedron as sphere substitute)
+    {
+        Material redMat;
+        redMat.base_color_factor = glm::vec4(1.0f, 0.2f, 0.2f, 1.0f);
+        redMat.roughness_factor = 0.3f;
+        redMat.metallic_factor = 0.0f;
+
+        auto red_sphere = std::make_shared<Entity>(
+            "meshes/octahedron.obj",
+            redMat,
+            glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f, 0.5f, 0.0f))
+        );
+        scene_->AddEntity(red_sphere);
+    }
+
+    // Green metallic sphere
+    {
+        Material greenMat;
+        greenMat.base_color_factor = glm::vec4(0.2f, 1.0f, 0.2f, 1.0f);
+        greenMat.roughness_factor = 0.1f;
+        greenMat.metallic_factor = 0.95f;
+
+        auto green_sphere = std::make_shared<Entity>(
+            "meshes/octahedron.obj",
+            greenMat,
+            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f))
+        );
+        scene_->AddEntity(green_sphere);
+    }
+
+    // Blue cube
+    {
+        Material blueMat;
+        blueMat.base_color_factor = glm::vec4(0.2f, 0.2f, 1.0f, 1.0f);
+        blueMat.roughness_factor = 0.5f;
+        blueMat.metallic_factor = 0.0f;
+
+        auto blue_cube = std::make_shared<Entity>(
+            "meshes/cube.obj",
+            blueMat,
+            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, 0.0f))
+        );
+        scene_->AddEntity(blue_cube);
+    }
+    */
+
     /*
     Light sunLight;
     sunLight.type = LIGHT_SUN;
