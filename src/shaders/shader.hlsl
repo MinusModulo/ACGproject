@@ -20,6 +20,9 @@ struct Material {
   float normal_scale;
   int normal_texture;
 
+  float clearcoat_factor;
+  float clearcoat_roughness_factor;
+
   int alpha_mode; // 0: OPAQUE, 1: MASK, 2: BLEND
 
   float transmission;
@@ -80,6 +83,9 @@ struct RayPayload {
   float3 emission;
 
   float ao;
+
+  float clearcoat;
+  float clearcoat_roughness;
 
   float transmission;
   float ior;
@@ -179,9 +185,9 @@ bool dead() {
   return true;
 }
 
-float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, float metallic, float ao);
+float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, float metallic, float ao, float clearcoat, float clearcoat_roughness);
 
-float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_dir, float3 albedo, float roughness, float metallic, float ao,inout uint rng_state) {
+float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_dir, float3 albedo, float roughness, float metallic, float ao, float clearcoat, float clearcoat_roughness, inout uint rng_state) {
   float3 direct_light = float3(0.0, 0.0, 0.0);
   
   // POINT_LIGHT
@@ -201,7 +207,7 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_di
   if (NdotL > 0.0) {
     // [Fix] Clamp roughness for NEE to reduce fireflies on smooth surfaces
     float safe_roughness = max(roughness, 0.15);
-    float3 brdf = eval_brdf(normal, light_dir, view_dir, albedo, safe_roughness, metallic, ao);
+    float3 brdf = eval_brdf(normal, light_dir, view_dir, albedo, safe_roughness, metallic, ao, clearcoat, clearcoat_roughness);
     if (!CastShadowRay(position + normal * 0.01, light_dir, max_distance - 0.01)) {
       direct_light = brdf * radiance * NdotL * inv_pdf;
     }
@@ -232,7 +238,7 @@ float G_Smith(float NdotV, float NdotL, float roughness) {
   return ggx1 * ggx2;
 }
 
-float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, float metallic, float ao = 1.0) {
+float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, float metallic, float ao = 1.0, float clearcoat = 0.0, float clearcoat_roughness = 0.0) {
     float3 H = normalize(V + L);
     float NdotL = max(dot(N, L), 0.0);
     float NdotV = max(dot(N, V), 0.0);
@@ -252,7 +258,19 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
     float3 kD = (1.0 - kS) * (1.0 - metallic);
     float3 diffuse = kD * albedo / PI * ao;
 
-    return diffuse + specular;
+    float3 base_layer = diffuse + specular;
+
+    if (clearcoat > 0.0) {
+        float Fc = F_Schlick(float3(0.04, 0.04, 0.04), VdotH).r;
+        float Dc = D_GGX(NdotH, clearcoat_roughness);
+        float Gc = G_Smith(NdotV, NdotL, clearcoat_roughness);
+
+        float3 f_clearcoat = float3(Dc * Gc * Fc, Dc * Gc * Fc, Dc * Gc * Fc) / max(4.0 * NdotV * NdotL, eps);
+
+        return f_clearcoat * clearcoat + (1.0 - Fc * clearcoat) * base_layer;
+    }
+
+    return base_layer;
 }
 
 // sample a cosine-weighted hemisphere direction
@@ -434,50 +452,76 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
     // V is the in-direction (with a negative)
     float3 V = -normalize(ray.Direction);
 
-    // diffuse candidate
-    float3 local_diff = sample_cosine_hemisphere(r1, r2);
-    float3 L_diff = local_diff.x * tangent + local_diff.y * bitangent + local_diff.z * N;
-    L_diff = normalize(L_diff);
-    // pdf = cos / pi
-    float pdf_diff_at_Ldiff = max(dot(N, L_diff), 0.0) / PI;
-
-    // specular candidate
-    float r4 = rand(rng_state);
-    float r5 = rand(rng_state);
-    float3 h_local = sample_GGX_half(r4, r5, payload.roughness);
-    float3 H = h_local.x * tangent + h_local.y * bitangent + h_local.z * N;
-    H = normalize(H);
-    float3 L_spec = normalize(reflect(-V, H));
-    // calc pdf
-    float pdf_spec_at_Lspec = pdf_GGX_for_direction(N, V, L_spec, payload.roughness);
-
-    // choose which direction to actually trace
-    // use F to decide q
+    // Calculate selection probabilities
     float3 F0 = lerp(float3(0.04, 0.04, 0.04), payload.albedo, payload.metallic);
     float3 F = F_Schlick(F0, dot(N, V));
     float luminance = dot(F, float3(0.2126, 0.7152, 0.0722));
-    float q_spec = clamp(saturate(luminance), 0.05, 0.95);
-    float q_diff = 1.0 - q_spec;
+    
+    // Base layer probabilities
+    float q_spec_base = clamp(saturate(luminance), 0.05, 0.95);
+    float q_diff_base = 1.0 - q_spec_base;
 
+    // Clearcoat probability
+    float p_clearcoat = 0.0;
+    if (payload.clearcoat > 0.0) {
+        float F_cc = F_Schlick(float3(0.04, 0.04, 0.04), dot(N, V)).r;
+        p_clearcoat = clamp(payload.clearcoat * 0.5, 0.0, 0.5); // Simple fixed weight based on strength
+    }
+    float p_base = 1.0 - p_clearcoat;
+
+    // Generate candidates
+    
+    // Diffuse candidate
+    float3 local_diff = sample_cosine_hemisphere(r1, r2);
+    float3 L_diff = local_diff.x * tangent + local_diff.y * bitangent + local_diff.z * N;
+    L_diff = normalize(L_diff);
+    
+    // Base Specular candidate
+    float r4 = rand(rng_state);
+    float r5 = rand(rng_state);
+    float3 h_local = sample_GGX_half(r4, r5, payload.roughness);
+    float3 H_base = h_local.x * tangent + h_local.y * bitangent + h_local.z * N;
+    H_base = normalize(H_base);
+    float3 L_spec_base = normalize(reflect(-V, H_base));
+
+    // Clearcoat Specular candidate
+    float r6 = rand(rng_state);
+    float r7 = rand(rng_state);
+    float3 h_local_cc = sample_GGX_half(r6, r7, payload.clearcoat_roughness);
+    float3 H_cc = h_local_cc.x * tangent + h_local_cc.y * bitangent + h_local_cc.z * N;
+    H_cc = normalize(H_cc);
+    float3 L_spec_cc = normalize(reflect(-V, H_cc));
+
+    // Select direction
     float3 next_dir;
-    if (r3 < q_spec) {
-      next_dir = L_spec;
+    if (r3 < p_clearcoat) {
+        next_dir = L_spec_cc;
     } else {
-      next_dir = L_diff;
+        // Rescale r3 to [0, 1] for base selection
+        float r3_base = (r3 - p_clearcoat) / max(eps, p_base);
+        if (r3_base < q_spec_base) {
+            next_dir = L_spec_base;
+        } else {
+            next_dir = L_diff;
+        }
     }
 
-    float pdf_diff_at_sel = max(dot(N, next_dir), 0.0) / PI;
-    float pdf_spec_at_sel = pdf_GGX_for_direction(N, V, next_dir, payload.roughness);
+    // Calculate combined PDF
+    float pdf_diff = max(dot(N, next_dir), 0.0) / PI;
+    float pdf_spec_base = pdf_GGX_for_direction(N, V, next_dir, payload.roughness);
+    float pdf_spec_cc = 0.0;
+    if (payload.clearcoat > 0.0) {
+        pdf_spec_cc = pdf_GGX_for_direction(N, V, next_dir, payload.clearcoat_roughness);
+    }
 
-    // combined pdf for MIS
-    float pdf_total = q_diff * pdf_diff_at_sel + q_spec * pdf_spec_at_sel;
+    float pdf_total = p_clearcoat * pdf_spec_cc + p_base * (q_spec_base * pdf_spec_base + q_diff_base * pdf_diff);
 
     // if direction goes below horizon, continue/break
     float cos_theta = dot(N, next_dir);
     if (cos_theta <= 0.0) break;
 
     // evaluate brdf and update throughput
-    float3 brdf = eval_brdf(N, next_dir, V, payload.albedo, payload.roughness, payload.metallic, payload.ao);
+    float3 brdf = eval_brdf(N, next_dir, V, payload.albedo, payload.roughness, payload.metallic, payload.ao, payload.clearcoat, payload.clearcoat_roughness);
 
     // This part remains the same, we do not change the coeff.
     throughput *= brdf * cos_theta / max(eps, pdf_total);
@@ -608,6 +652,9 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
 
   payload.ao = AO;
 
+  payload.clearcoat = mat.clearcoat_factor;
+  payload.clearcoat_roughness = mat.clearcoat_roughness_factor;
+
   payload.transmission = mat.transmission;
   payload.ior = mat.ior;
   payload.new_eps = RayTCurrent() * 1e-4 + eps;
@@ -622,6 +669,6 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
   // Sample all lights
   for (uint i = 0; i < hover_info.light_count; ++i) {
     Light light = Lights[i];
-    payload.direct_light += EvaluateLight(light, payload.position, payload.normal, view_dir, payload.albedo, payload.roughness, payload.metallic, payload.ao, payload.rng_state);
+    payload.direct_light += EvaluateLight(light, payload.position, payload.normal, view_dir, payload.albedo, payload.roughness, payload.metallic, payload.ao, payload.clearcoat, payload.clearcoat_roughness, payload.rng_state);
   }
 }

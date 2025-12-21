@@ -226,24 +226,24 @@ void Application::OnInit() {
 
     // Add some default lights
     // Temporarily remove point light and add area light nearby
-    /*
+    // /*
     Light pointLight;
     pointLight.type = LIGHT_POINT;
     pointLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
     pointLight.intensity = 10.0f;
-    pointLight.position = glm::vec3(3.5f, 1.2f, 1.0f);
+    pointLight.position = glm::vec3(0.0f, 1.2f, 1.0f);
     scene_->AddLight(pointLight);
-    */
-    
-    Light areaLight;
-    areaLight.type = LIGHT_AREA; // Area light
-    areaLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
-    areaLight.intensity = 30.0f;
-    areaLight.position = glm::vec3(2.4f, 1.2f, 1.0f); // Near the original point light position
-    areaLight.direction = glm::vec3(-1.0f, 0.0f, 0.0f); 
-    areaLight.u = glm::vec3(2.0f, 0.0f, 0.0f); // Width vector
-    areaLight.v = glm::vec3(0.0f, 0.0f, 2.0f); // Height vector
-    scene_->AddLight(areaLight);
+    // */
+
+    // Light areaLight;
+    // areaLight.type = LIGHT_AREA; // Area light
+    // areaLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
+    // areaLight.intensity = 30.0f;
+    // areaLight.position = glm::vec3(2.4f, 1.2f, 1.0f); // Near the original point light position
+    // areaLight.direction = glm::vec3(-1.0f, 0.0f, 0.0f); 
+    // areaLight.u = glm::vec3(2.0f, 0.0f, 0.0f); // Width vector
+    // areaLight.v = glm::vec3(0.0f, 0.0f, 2.0f); // Height vector
+    // scene_->AddLight(areaLight);
     /*
     // Add glass sphere around the area light
     Material glassMaterial;
@@ -278,37 +278,44 @@ void Application::OnInit() {
         scene_->AddEntity(ground);
     }
     
-    // Red sphere (using octahedron as sphere substitute)
+    // Comparison 1: Base Material (No Clearcoat)
+    // Using a deep blue color to simulate car paint base
     {
-        Material redMat;
-        redMat.base_color_factor = glm::vec4(1.0f, 0.2f, 0.2f, 1.0f);
-        redMat.roughness_factor = 0.3f;
-        redMat.metallic_factor = 0.0f;
+        Material baseMat;
+        baseMat.base_color_factor = glm::vec4(0.05f, 0.05f, 0.4f, 1.0f);
+        baseMat.roughness_factor = 0.5f; // Rough base
+        baseMat.metallic_factor = 0.0f;  // Dielectric (plastic/paint)
+        baseMat.clearcoat_factor = 0.0f; // No clearcoat
 
-        auto red_sphere = std::make_shared<Entity>(
+        auto base_sphere = std::make_shared<Entity>(
             "meshes/octahedron.obj",
-            redMat,
-            glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f, 0.5f, 0.0f))
+            baseMat,
+            glm::translate(glm::mat4(1.0f), glm::vec3(-1.5f, 0.5f, 0.0f))
         );
-        scene_->AddEntity(red_sphere);
+        scene_->AddEntity(base_sphere);
     }
 
-    // Green metallic sphere
+    // Comparison 2: With Clearcoat
+    // Same base material, but with a sharp clearcoat layer on top
     {
-        Material greenMat;
-        greenMat.base_color_factor = glm::vec4(0.2f, 1.0f, 0.2f, 1.0f);
-        greenMat.roughness_factor = 0.1f;
-        greenMat.metallic_factor = 0.95f;
+        Material ccMat;
+        ccMat.base_color_factor = glm::vec4(0.05f, 0.05f, 0.4f, 1.0f);
+        ccMat.roughness_factor = 0.5f; // Same rough base
+        ccMat.metallic_factor = 0.0f;
+        
+        // Add strong, sharp clearcoat
+        ccMat.clearcoat_factor = 1.0f;
+        ccMat.clearcoat_roughness_factor = 0.01f; // Very sharp reflections
 
-        auto green_sphere = std::make_shared<Entity>(
+        auto cc_sphere = std::make_shared<Entity>(
             "meshes/octahedron.obj",
-            greenMat,
-            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f))
+            ccMat,
+            glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, 0.5f, 0.0f))
         );
-        scene_->AddEntity(green_sphere);
+        scene_->AddEntity(cc_sphere);
     }
 
-    // Blue cube
+    // Blue cube (moved aside)
     {
         Material blueMat;
         blueMat.base_color_factor = glm::vec4(0.2f, 0.2f, 1.0f, 1.0f);
@@ -318,7 +325,7 @@ void Application::OnInit() {
         auto blue_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
             blueMat,
-            glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 0.5f, 0.0f))
+            glm::translate(glm::mat4(1.0f), glm::vec3(2.5f, 0.5f, 0.0f))
         );
         scene_->AddEntity(blue_cube);
     }

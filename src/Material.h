@@ -25,6 +25,10 @@ struct Material {
     float normal_scale;
     int normal_texture;
 
+    // Clearcoat
+    float clearcoat_factor;
+    float clearcoat_roughness_factor;
+
     // alphaMode
     int alpha_mode; // 0: OPAQUE, 1: MASK, 2: BLEND
     
@@ -49,6 +53,9 @@ struct Material {
         , normal_scale(1.0f)
         , normal_texture(-1)
 
+        , clearcoat_factor(0.0f)
+        , clearcoat_roughness_factor(0.0f)
+
         , alpha_mode(0)
 
         , transmission(0.0f)
@@ -70,6 +77,9 @@ struct Material {
              float normal_scale = 1.0f,
              int normal_texture = -1,
              
+             float clearcoat = 0.0f,
+             float clearcoat_roughness = 0.0f,
+
              int alpha_mode = 0,
 
              float trans = 0.0f, 
@@ -87,6 +97,9 @@ struct Material {
 
            , AO_strength(ao_strength)
            , AO_texture(ao_texture)
+
+           , clearcoat_factor(clearcoat)
+           , clearcoat_roughness_factor(clearcoat_roughness)
 
            , normal_scale(normal_scale)
            , normal_texture(normal_texture)

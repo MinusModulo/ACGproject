@@ -72,3 +72,7 @@
 - 完全不知道怎么修,先搁置了.
 
 - 尝试加上 Principled BSDF 的 clearcoat 部分.
+
+![alt text](image.png)
+
+能看出来中间这个是加了清漆的嘛（（（
