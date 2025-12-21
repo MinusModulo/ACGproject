@@ -95,6 +95,9 @@ public:
 
     // Get base color texture count
     size_t GetBaseColorTextureCount() const { return base_color_srvs_.size(); }
+
+    // Add a texture to the scene (takes ownership)
+    int AddTexture(std::unique_ptr<grassland::graphics::Image> texture);
     
     // Follow the order of entity, create and attach texcoord buffer
     //void CreateAndAttachTexcoordBuffer(const std::vector<glm::vec2>& uvs);
@@ -127,6 +130,7 @@ private:
     std::vector<grassland::graphics::Buffer*> tangent_buffers_;
     std::vector<grassland::graphics::Buffer*> texcoord_buffers_;
     std::vector<grassland::graphics::Image*> base_color_srvs_;
+    std::vector<std::unique_ptr<grassland::graphics::Image>> texture_storage_; // Owns the textures
     grassland::graphics::Sampler* linear_wrap_sampler_ = nullptr;
 };
 

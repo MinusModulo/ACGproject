@@ -6,6 +6,8 @@
 #include "imgui.h"
 
 #include "stb_image_write.h"
+#include "stb_image.h"
+#include "tiny_obj_loader.h"
 
 #include <chrono>
 #include <iomanip>
@@ -220,7 +222,7 @@ void Application::OnInit() {
     scene_ = std::make_unique<Scene>(core_.get());
 
     // Call Load from glb function
-    scene_->LoadFromGLB("new_scene.glb");
+    // scene_->LoadFromGLB("new_scene.glb");
 
     // Add some default lights
     // Temporarily remove point light and add area light nearby
@@ -275,7 +277,7 @@ void Application::OnInit() {
         );
         scene_->AddEntity(ground);
     }
-    /*
+    
     // Red sphere (using octahedron as sphere substitute)
     {
         Material redMat;
@@ -320,7 +322,14 @@ void Application::OnInit() {
         );
         scene_->AddEntity(blue_cube);
     }
-    */
+
+    if (scene_->GetBaseColorTextureCount() == 0) {
+        std::unique_ptr<grassland::graphics::Image> dummy_tex;
+        core_->CreateImage(1, 1, grassland::graphics::IMAGE_FORMAT_R8G8B8A8_UNORM, &dummy_tex);
+        uint32_t white = 0xFFFFFFFF;
+        dummy_tex->UploadData(&white);
+        scene_->AddTexture(std::move(dummy_tex));
+    }
 
     /*
     Light sunLight;

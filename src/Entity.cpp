@@ -73,7 +73,7 @@ void Entity::BuildBLAS(grassland::graphics::Core* core) {
     if (mesh_.Normals()) {
         normal_buffer_->UploadData(mesh_.Normals(), normal_buffer_size);
     } else {
-        std::vector<glm::vec3> default_normals(mesh_.NumVertices(), glm::vec3(0.0f, 1.0f, 0.0f));
+        std::vector<glm::vec3> default_normals(mesh_.NumVertices(), glm::vec3(0.0f, 0.0f, 0.0f));
         normal_buffer_->UploadData(default_normals.data(), normal_buffer_size);
     }
 

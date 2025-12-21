@@ -33,6 +33,13 @@ void Scene::AddLight(const Light& light) {
     UpdateLightsBuffer();
 }
 
+int Scene::AddTexture(std::unique_ptr<grassland::graphics::Image> texture) {
+    if (!texture) return -1;
+    base_color_srvs_.push_back(texture.get());
+    texture_storage_.push_back(std::move(texture));
+    return static_cast<int>(base_color_srvs_.size() - 1);
+}
+
 void Scene::ClearLights() {
     lights_.clear();
     lights_buffer_.reset();
@@ -49,6 +56,7 @@ void Scene::Clear() {
     tangent_buffers_.clear();
     texcoord_buffers_.clear();
     base_color_srvs_.clear();
+    texture_storage_.clear();
     linear_wrap_sampler_ = nullptr;
 }
 

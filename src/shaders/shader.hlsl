@@ -123,16 +123,16 @@ float rand(inout uint rng_state) {
 } //rand will change rng_state
 
 // Light sampling functions
-float3 SamplePointLight(Light light, float3 position, out float3 light_dir, inout float pdf) {
+float3 SamplePointLight(Light light, float3 position, out float3 light_dir, inout float inv_pdf) {
   light_dir = normalize(light.position - position);
-  pdf = 1.0f;
+  inv_pdf = 1.0f;
   float dist_sq = dot(light.position - position, light.position - position);
   return light.color * light.intensity / dist_sq;
 }
 
-float3 SampleAreaLight(Light light, float3 position, out float3 light_dir, inout float pdf, inout float3 sampled_point, inout uint rng_state) {
+float3 SampleAreaLight(Light light, float3 position, out float3 light_dir, inout float inv_pdf, inout float3 sampled_point, inout uint rng_state) {
 	// Sample a point on the area light
-    float u1 = rand(rng_state);
+  float u1 = rand(rng_state);
 	float u2 = rand(rng_state);
 
 	sampled_point = light.position + (u1 - 0.5f) * light.u + (u2 - 0.5f) * light.v;
@@ -142,7 +142,8 @@ float3 SampleAreaLight(Light light, float3 position, out float3 light_dir, inout
 	float dist_sq = dot(sampled_point - position, sampled_point - position);
 	float cos_theta = max(dot(-light_dir, normalize(light.direction)), 0.0f);
 
-	pdf = dist_sq / (area * cos_theta + eps);
+	// [Fix] Increase epsilon to prevent singularity/noise when close to light
+	inv_pdf = area * cos_theta / max(dist_sq, 1e-2);
 
 	return light.color * light.intensity;
 }
@@ -169,33 +170,42 @@ bool CastShadowRay(float3 origin, float3 direction, float max_distance) {
     return shadow_payload.hit;
 }//1= hit
 
+bool dead() {
+  int i = 2;
+  while (i >= 0) {
+    if (i == 2) i -= 2;
+    else i += 2;
+  }
+  return true;
+}
+
 float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, float metallic, float ao);
 
 float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_dir, float3 albedo, float roughness, float metallic, float ao,inout uint rng_state) {
   float3 direct_light = float3(0.0, 0.0, 0.0);
   
-    // POINT_LIGHT
-      float3 light_dir;
-      float3 radiance;
-      float pdf;
-      float max_distance;
-      if (light.type == 0) {
-          radiance = SamplePointLight(light, position, light_dir, pdf);
-          max_distance = length(light.position - position);
-      }
-	  else if (light.type == 1) {
-		  float3 sampled_point;
-		  radiance = SampleAreaLight(light, position, light_dir, pdf, sampled_point, rng_state);
-          max_distance = length(sampled_point - position);
-	  }
-      float NdotL = max(dot(normal, light_dir), 0.0);
-      if (NdotL > 0.0) {
-          float3 brdf = eval_brdf(normal, light_dir, view_dir, albedo, roughness, metallic, ao);
-          float visible = (1.0 - (float)CastShadowRay(position + normal * eps, light_dir, max_distance - eps));
-		  direct_light =  brdf* radiance * NdotL * visible / max(eps, pdf);
-      }
-  
-  
+  // POINT_LIGHT
+  float3 light_dir;
+  float3 radiance;
+  float inv_pdf;
+  float max_distance;
+  if (light.type == 0) {
+    radiance = SamplePointLight(light, position, light_dir, inv_pdf);
+    max_distance = length(light.position - position);
+  } else if (light.type == 1) {
+    float3 sampled_point;
+    radiance = SampleAreaLight(light, position, light_dir, inv_pdf, sampled_point, rng_state);
+    max_distance = length(sampled_point - position);
+  }
+  float NdotL = max(dot(normal, light_dir), 0.0);
+  if (NdotL > 0.0) {
+    // [Fix] Clamp roughness for NEE to reduce fireflies on smooth surfaces
+    float safe_roughness = max(roughness, 0.15);
+    float3 brdf = eval_brdf(normal, light_dir, view_dir, albedo, safe_roughness, metallic, ao);
+    if (!CastShadowRay(position + normal * 0.01, light_dir, max_distance - 0.01)) {
+      direct_light = brdf * radiance * NdotL * inv_pdf;
+    }
+  }
   return direct_light;
 }
 
@@ -456,7 +466,6 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
       next_dir = L_diff;
     }
 
-    // in order to do MIS, we need to compute the pdf both startegies
     float pdf_diff_at_sel = max(dot(N, next_dir), 0.0) / PI;
     float pdf_spec_at_sel = pdf_GGX_for_direction(N, V, next_dir, payload.roughness);
 
@@ -483,8 +492,9 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
     if (rand(rng_state) > p) break;
     throughput /= p;
     depth += 1;
+
+    payload.rng_state = rng_state;
   }
-  
   // Write outputs
   output[pixel_coords] = float4(radiance, 1.0);
 
