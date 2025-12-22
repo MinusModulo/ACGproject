@@ -27,6 +27,8 @@ struct Material {
 
   float transmission;
   float ior;
+
+  float dispersion;
 };
 
 struct HoverInfo {
@@ -90,6 +92,8 @@ struct RayPayload {
   float transmission;
   float ior;
 
+  float dispersion;
+
   int alpha_mode;
   float alpha;
 
@@ -104,7 +108,6 @@ struct RayPayload {
 
 static const float PI = 3.14159265359;
 static const float eps = 1e-6;
-static const uint RAY_TYPE_SHADOW = 1;
 
 // We need rand variables for Monte Carlo integration
 // I leverage a simple Wang Hash + Xorshift RNG combo here
@@ -155,11 +158,7 @@ float3 SampleAreaLight(Light light, float3 position, out float3 light_dir, inout
 }
 
 
-struct ShadowPayload {
-    bool hit;
-};
-
-
+bool dead();
 
 bool CastShadowRay(float3 origin, float3 direction, float max_distance) {
     RayDesc shadow_ray;
@@ -168,11 +167,20 @@ bool CastShadowRay(float3 origin, float3 direction, float max_distance) {
     shadow_ray.TMin = eps;
     shadow_ray.TMax = max_distance;
 
-    ShadowPayload shadow_payload;
-    shadow_payload.hit = false;
-
-    TraceRay(as, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, RAY_TYPE_SHADOW, 1, 0, shadow_ray, shadow_payload);
-
+    // [Fix] Use RayPayload to match the signature of MissMain
+    RayPayload shadow_payload;
+    shadow_payload.hit = true;
+    TraceRay(
+        as, 
+        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, 
+        0xFF, 
+        0,
+        1, 
+        0,
+        shadow_ray, 
+        shadow_payload
+    );
+    
     return shadow_payload.hit;
 }//1= hit
 
@@ -208,7 +216,7 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_di
     // [Fix] Clamp roughness for NEE to reduce fireflies on smooth surfaces
     float safe_roughness = max(roughness, 0.15);
     float3 brdf = eval_brdf(normal, light_dir, view_dir, albedo, safe_roughness, metallic, ao, clearcoat, clearcoat_roughness);
-    if (!CastShadowRay(position + normal * 0.01, light_dir, max_distance - 0.01)) {
+    if (!CastShadowRay(position + normal * 1e-3, light_dir, max_distance - 1e-3)) {
       direct_light = brdf * radiance * NdotL * inv_pdf;
     }
   }
@@ -356,9 +364,9 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
     // if not hit, accumulate sky color and break
     if (!payload.hit) {
       // gradient sky 
-      float t = 0.5 * (normalize(ray.Direction).y + 1.0);
-      float3 sky_color = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
-      radiance += throughput * sky_color;
+      // float t = 0.5 * (normalize(ray.Direction).y + 1.0);
+      // float3 sky_color = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
+      // radiance += throughput * sky_color;
       break;
     }
 
@@ -379,7 +387,7 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
         // Fresnel (this is true)
         float F0 = (1.0 - payload.ior) / (1.0 + payload.ior);
         F0 = F0 * F0;
-        float F = F_Schlick(float3(F0, F0, F0), dot(V, N)).x;
+        float F = F0 + (1.0 - F0) * pow(1.0 - dot(N, V), 5.0);
         
         // get refraction direction
         float3 I = ray.Direction;
@@ -387,31 +395,60 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
         
         // check for total internal reflection
         if (length(refract_dir) < 0.001) {
-            F = 1.0;
+          F = 1.0;
         }
         
         if (rand(rng_state) < F) {
             // reflection
             float3 reflect_dir = reflect(I, N);
+            ray.Origin = payload.position + N * eps;
             ray.Direction = normalize(reflect_dir);
-            ray.Origin = payload.position + ray.Direction * payload.new_eps;
             // you get full albedo on reflection
         } else {
             // refraction
-            ray.Direction = normalize(refract_dir);
-            ray.Origin = payload.position - ray.Direction * payload.new_eps;
-            throughput *= payload.albedo; // you get albedo tint on refraction
+
+            float ior_to_use = payload.ior;
+            float3 color_mask = float3(1.0, 1.0, 1.0);
+            float weight_correction = 1.0;
+
+            if (payload.dispersion > 0.0) {
+              float r_channel = rand(rng_state);
+              if (r_channel < 1.0 / 3.0) {
+                ior_to_use = payload.ior + payload.dispersion * 0.02;
+                color_mask = float3(1.0, 0.0, 0.0);
+              } else if (r_channel < 2.0 / 3.0) {
+                ior_to_use = payload.ior;
+                color_mask = float3(0.0, 1.0, 0.0);
+              } else {
+                ior_to_use = payload.ior - payload.dispersion * 0.02;
+                color_mask = float3(0.0, 0.0, 1.0);
+              }
+              weight_correction = 3.0;
+            }
+            float eta_disp = payload.front_face ? (1.0 / ior_to_use) : (ior_to_use);
+            float3 refract_dir = refract(I, N, eta_disp);
+            if (length(refract_dir) < 0.001) {
+                // total internal reflection fallback
+                float3 reflect_dir = reflect(I, N);
+                ray.Origin = payload.position + N * eps;
+                ray.Direction = normalize(reflect_dir);
+            } else {
+                ray.Origin = payload.position - N * eps;
+                ray.Direction = normalize(refract_dir);
+            }
+            throughput *= payload.albedo;
+            throughput *= color_mask * weight_correction;
         }
-        
+
         // weighting
         throughput /= payload.transmission;
         
-        float p = saturate(max(throughput.x, max(throughput.y, throughput.z)));
+        float p =  saturate(max(throughput.x, max(throughput.y, throughput.z)));
         p = clamp(p, 0.05, 0.95);
         if (rand(rng_state) > p) break;
         throughput /= p;
         depth += 1;
-        
+        payload.rng_state = rng_state;
         continue; // skip opaque, so if transmission chosen, it's not metallic, rough, etc.
       } else {
         // Normalize throughput for not choosing transmission
@@ -657,6 +694,7 @@ float pdf_GGX_for_direction(float3 N, float3 V, float3 L, float roughness) {
 
   payload.transmission = mat.transmission;
   payload.ior = mat.ior;
+  payload.dispersion = mat.dispersion;
   payload.new_eps = RayTCurrent() * 1e-4 + eps;
   
   payload.alpha_mode = mat.alpha_mode;

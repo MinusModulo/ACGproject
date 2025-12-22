@@ -36,6 +36,8 @@ struct Material {
     float transmission;
     float ior;
 
+    float dispersion;
+
     Material()
         : base_color_factor(1.0f, 1.0f, 1.0f, 1.0f)
         , base_color_tex(-1) 
@@ -59,7 +61,9 @@ struct Material {
         , alpha_mode(0)
 
         , transmission(0.0f)
-        , ior(1.45f) {}
+        , ior(1.45f)
+
+        , dispersion(0.0f) {}
 
     Material(const glm::vec4& color,
              int base_color_texture = -1,
@@ -83,7 +87,9 @@ struct Material {
              int alpha_mode = 0,
 
              float trans = 0.0f, 
-             float index_of_refraction = 1.45f
+             float index_of_refraction = 1.45f,
+
+             int dispersion = 0.0f
              )
            : base_color_factor(color)
            , base_color_tex(base_color_texture) 
@@ -107,6 +113,8 @@ struct Material {
            , alpha_mode(alpha_mode)
 
            , transmission(trans)
-           , ior(index_of_refraction) {}
+           , ior(index_of_refraction) 
+           
+           , dispersion(dispersion) {}
 };
 

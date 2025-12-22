@@ -229,9 +229,9 @@ void Application::OnInit() {
     // /*
     Light pointLight;
     pointLight.type = LIGHT_POINT;
-    pointLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
-    pointLight.intensity = 10.0f;
-    pointLight.position = glm::vec3(0.0f, 1.2f, 1.0f);
+    pointLight.color = glm::vec3(1.0f, 1.0f, 1.0f);
+    pointLight.intensity = 30.0f;
+    pointLight.position = glm::vec3(0.0f, 1.0f, 3.0f);
     scene_->AddLight(pointLight);
     // */
 
@@ -264,10 +264,13 @@ void Application::OnInit() {
     scene_->AddEntity(glassSphere);
 
     */
+//    /*
     // Add entities to the scene
     // Ground plane - a cube scaled to be flat
     {
         Material groundMat=Material();
+        groundMat.roughness_factor=1.0f;
+        groundMat.metallic_factor=0.0f;
 
         auto ground = std::make_shared<Entity>(
             "meshes/cube.obj",
@@ -278,54 +281,66 @@ void Application::OnInit() {
         scene_->AddEntity(ground);
     }
     
-    // Comparison 1: Base Material (No Clearcoat)
-    // Using a deep blue color to simulate car paint base
+    // transmissive sphere
+    // {
+    //     Material glassMat;
+    //     glassMat.base_color_factor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+    //     glassMat.roughness_factor = 0.01f;
+    //     glassMat.metallic_factor = 0.0f;
+    //     glassMat.transmission = 1.0f;
+    //     glassMat.ior = 1.52f;
+    //     glassMat.dispersion = 0.5f;
+
+    //     auto glass_sphere = std::make_shared<Entity>(
+    //         "meshes/cube.obj",
+    //         glassMat,
+    //         glm::translate(glm::mat4(1.0f), glm::vec3(-4.0f, 0.5f, 0.0f))
+    //     );
+    //     scene_->AddEntity(glass_sphere);
+    // }
+
     {
         Material baseMat;
-        baseMat.base_color_factor = glm::vec4(0.05f, 0.05f, 0.4f, 1.0f);
-        baseMat.roughness_factor = 0.5f; // Rough base
-        baseMat.metallic_factor = 0.0f;  // Dielectric (plastic/paint)
-        baseMat.clearcoat_factor = 0.0f; // No clearcoat
+        baseMat.base_color_factor = glm::vec4(0.05f, 0.4f, 0.4f, 1.0f);
+        baseMat.ior = 1.5f;
+        baseMat.transmission = 1.0f;
+        baseMat.dispersion = 0.1f;
 
         auto base_sphere = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
+            "meshes/cube.obj",
             baseMat,
-            glm::translate(glm::mat4(1.0f), glm::vec3(-1.5f, 0.5f, 0.0f))
+            glm::translate(glm::mat4(1.0f), glm::vec3(-1.5f, 0.0f, 0.0f))
         );
         scene_->AddEntity(base_sphere);
     }
 
-    // Comparison 2: With Clearcoat
-    // Same base material, but with a sharp clearcoat layer on top
     {
         Material ccMat;
-        ccMat.base_color_factor = glm::vec4(0.05f, 0.05f, 0.4f, 1.0f);
-        ccMat.roughness_factor = 0.5f; // Same rough base
+        ccMat.base_color_factor = glm::vec4(0.4f, 0.05f, 0.05f, 1.0f);
+        ccMat.roughness_factor = 0.5f;
         ccMat.metallic_factor = 0.0f;
         
-        // Add strong, sharp clearcoat
         ccMat.clearcoat_factor = 1.0f;
-        ccMat.clearcoat_roughness_factor = 0.01f; // Very sharp reflections
+        ccMat.clearcoat_roughness_factor = 0.01f;
 
         auto cc_sphere = std::make_shared<Entity>(
             "meshes/octahedron.obj",
             ccMat,
-            glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, 0.5f, 0.0f))
+            glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, 0.0f, 0.0f))
         );
         scene_->AddEntity(cc_sphere);
     }
 
-    // Blue cube (moved aside)
     {
         Material blueMat;
-        blueMat.base_color_factor = glm::vec4(0.2f, 0.2f, 1.0f, 1.0f);
+        blueMat.base_color_factor = glm::vec4(0.05f, 0.4f, 0.05f, 1.0f);
         blueMat.roughness_factor = 0.5f;
         blueMat.metallic_factor = 0.0f;
 
         auto blue_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
             blueMat,
-            glm::translate(glm::mat4(1.0f), glm::vec3(2.5f, 0.5f, 0.0f))
+            glm::translate(glm::mat4(1.0f), glm::vec3(2.5f, 0.0f, 0.0f))
         );
         scene_->AddEntity(blue_cube);
     }
@@ -337,7 +352,7 @@ void Application::OnInit() {
         dummy_tex->UploadData(&white);
         scene_->AddTexture(std::move(dummy_tex));
     }
-
+// */
     /*
     Light sunLight;
     sunLight.type = LIGHT_SUN;
