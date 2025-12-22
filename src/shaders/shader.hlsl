@@ -69,9 +69,9 @@
     // if not hit, accumulate sky color and break
     if (!payload.hit) {
       // gradient sky 
-      float t = 0.5 * (normalize(ray.Direction).y + 1.0);
-      float3 sky_color = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
-      radiance += throughput * sky_color;
+      // float t = 0.5 * (normalize(ray.Direction).y + 1.0);
+      // float3 sky_color = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
+      // radiance += throughput * sky_color;
       break;
     }
 
@@ -288,9 +288,18 @@
     ray.Origin = payload.position + next_dir * payload.new_eps;  // offset a bit to avoid self-intersection!!!!
     ray.Direction = next_dir;
 
+    // ========================================================================
+    // Firefly Reduction: Improved Russian Roulette Termination (Scheme 6)
+    // ========================================================================
     // Russian roulette termination
     float p = saturate(max(throughput.x, max(throughput.y, throughput.z)));
     p = clamp(p, 0.05, 0.95);
+    
+    // Force termination if throughput is too large (prevents fireflies)
+    if (any(throughput > float3(10.0, 10.0, 10.0))) {
+      break; // Force termination to prevent firefly
+    }
+    
     if (rand(rng_state) > p) break;
     throughput /= p;
     depth += 1;

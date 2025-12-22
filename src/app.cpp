@@ -224,28 +224,28 @@ void Application::OnInit() {
     scene_ = std::make_unique<Scene>(core_.get());
 
     // Call Load from glb function
-    // scene_->LoadFromGLB("new_scene.glb");
+    scene_->LoadFromGLB("new_scene.glb");
 
     // Add some default lights
     // Temporarily remove point light and add area light nearby
-    // /*
+    /*
     Light pointLight;
     pointLight.type = LIGHT_POINT;
     pointLight.color = glm::vec3(1.0f, 1.0f, 1.0f);
     pointLight.intensity = 30.0f;
     pointLight.position = glm::vec3(0.0f, 1.0f, 3.0f);
     scene_->AddLight(pointLight);
-    // */
+    */
 
-    // Light areaLight;
-    // areaLight.type = LIGHT_AREA; // Area light
-    // areaLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
-    // areaLight.intensity = 30.0f;
-    // areaLight.position = glm::vec3(2.4f, 1.2f, 1.0f); // Near the original point light position
-    // areaLight.direction = glm::vec3(-1.0f, 0.0f, 0.0f); 
-    // areaLight.u = glm::vec3(2.0f, 0.0f, 0.0f); // Width vector
-    // areaLight.v = glm::vec3(0.0f, 0.0f, 2.0f); // Height vector
-    // scene_->AddLight(areaLight);
+    Light areaLight;
+    areaLight.type = LIGHT_AREA; // Area light
+    areaLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
+    areaLight.intensity = 30.0f;
+    areaLight.position = glm::vec3(2.4f, 1.2f, 1.0f); // Near the original point light position
+    areaLight.direction = glm::vec3(-1.0f, 0.0f, 0.0f); 
+    areaLight.u = glm::vec3(2.0f, 0.0f, 0.0f); // Width vector
+    areaLight.v = glm::vec3(0.0f, 0.0f, 2.0f); // Height vector
+    scene_->AddLight(areaLight);
     /*
     // Add glass sphere around the area light
     Material glassMaterial;
@@ -266,7 +266,7 @@ void Application::OnInit() {
     scene_->AddEntity(glassSphere);
 
     */
-//    /*
+   /*
     // Add entities to the scene
     // Ground plane - a cube scaled to be flat
     {
@@ -476,7 +476,7 @@ void Application::OnInit() {
         dummy_tex->UploadData(&white);
         scene_->AddTexture(std::move(dummy_tex));
     }
-// */
+*/
     /*
     Light sunLight;
     sunLight.type = LIGHT_SUN;

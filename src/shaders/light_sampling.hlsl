@@ -28,8 +28,16 @@ float3 SampleAreaLight(Light light, float3 position, out float3 light_dir, inout
 	float dist_sq = dot(sampled_point - position, sampled_point - position);
 	float cos_theta = max(dot(-light_dir, normalize(light.direction)), 0.0f);
 
-	// [Fix] Increase epsilon to prevent singularity/noise when close to light
-	inv_pdf = area * cos_theta / max(dist_sq, 1e-2);
+	// ========================================================================
+	// Firefly Reduction: Improved PDF Calculation (Scheme 2)
+	// ========================================================================
+	// Clamp extreme values to prevent fireflies
+	dist_sq = max(dist_sq, 0.01); // Minimum distance 0.1
+	cos_theta = max(cos_theta, 0.01); // Minimum angle ~84 degrees
+	
+	// Calculate inv_pdf and clamp to reasonable range
+	inv_pdf = area * cos_theta / dist_sq;
+	inv_pdf = clamp(inv_pdf, 1e-3, 1e3); // Limit to reasonable range
 
 	return light.color * light.intensity;
 }
