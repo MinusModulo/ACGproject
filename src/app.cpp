@@ -13,6 +13,8 @@
 #include <iomanip>
 #include <sstream>
 #include <filesystem>
+#include <fstream>
+#include <vector>
 
 namespace {
 #include "built_in_shaders.inl"
@@ -222,28 +224,28 @@ void Application::OnInit() {
     scene_ = std::make_unique<Scene>(core_.get());
 
     // Call Load from glb function
-    scene_->LoadFromGLB("new_scene.glb");
+    // scene_->LoadFromGLB("new_scene.glb");
 
     // Add some default lights
     // Temporarily remove point light and add area light nearby
-    /*
+    // /*
     Light pointLight;
     pointLight.type = LIGHT_POINT;
     pointLight.color = glm::vec3(1.0f, 1.0f, 1.0f);
     pointLight.intensity = 30.0f;
     pointLight.position = glm::vec3(0.0f, 1.0f, 3.0f);
     scene_->AddLight(pointLight);
-    */
+    // */
 
-    Light areaLight;
-    areaLight.type = LIGHT_AREA; // Area light
-    areaLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
-    areaLight.intensity = 30.0f;
-    areaLight.position = glm::vec3(2.4f, 1.2f, 1.0f); // Near the original point light position
-    areaLight.direction = glm::vec3(-1.0f, 0.0f, 0.0f); 
-    areaLight.u = glm::vec3(2.0f, 0.0f, 0.0f); // Width vector
-    areaLight.v = glm::vec3(0.0f, 0.0f, 2.0f); // Height vector
-    scene_->AddLight(areaLight);
+    // Light areaLight;
+    // areaLight.type = LIGHT_AREA; // Area light
+    // areaLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
+    // areaLight.intensity = 30.0f;
+    // areaLight.position = glm::vec3(2.4f, 1.2f, 1.0f); // Near the original point light position
+    // areaLight.direction = glm::vec3(-1.0f, 0.0f, 0.0f); 
+    // areaLight.u = glm::vec3(2.0f, 0.0f, 0.0f); // Width vector
+    // areaLight.v = glm::vec3(0.0f, 0.0f, 2.0f); // Height vector
+    // scene_->AddLight(areaLight);
     /*
     // Add glass sphere around the area light
     Material glassMaterial;
@@ -264,7 +266,7 @@ void Application::OnInit() {
     scene_->AddEntity(glassSphere);
 
     */
-   /*
+//    /*
     // Add entities to the scene
     // Ground plane - a cube scaled to be flat
     {
@@ -301,49 +303,171 @@ void Application::OnInit() {
 
     {
         Material baseMat;
-        baseMat.base_color_factor = glm::vec4(0.05f, 0.4f, 0.4f, 1.0f);
-        baseMat.ior = 1.5f;
-        baseMat.transmission = 1.0f;
-        baseMat.dispersion = 0.1f;
+        baseMat.base_color_factor = glm::vec4(0.05f, 0.4f, 0.05f, 1.0f);
+        baseMat.roughness_factor = 0.5f;
+        baseMat.metallic_factor = 0.7f;
 
-        auto base_sphere = std::make_shared<Entity>(
+        auto base_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
             baseMat,
-            glm::translate(glm::mat4(1.0f), glm::vec3(-1.5f, 0.0f, 0.0f))
+            glm::translate(glm::mat4(1.0f), glm::vec3(-1.5f, 0.5f, 0.0f))
         );
-        scene_->AddEntity(base_sphere);
+        scene_->AddEntity(base_cube);
     }
 
     {
-        Material ccMat;
-        ccMat.base_color_factor = glm::vec4(0.4f, 0.05f, 0.05f, 1.0f);
-        ccMat.roughness_factor = 0.5f;
-        ccMat.metallic_factor = 0.0f;
+        // ============================================================================
+        // Multi-Layer Material Cube: Green Iron Base + Rust Layer
+        // ============================================================================
         
-        ccMat.clearcoat_factor = 1.0f;
-        ccMat.clearcoat_roughness_factor = 0.01f;
-
-        auto cc_sphere = std::make_shared<Entity>(
-            "meshes/octahedron.obj",
-            ccMat,
-            glm::translate(glm::mat4(1.0f), glm::vec3(0.5f, 0.0f, 0.0f))
+        // Helper function to load texture from file
+        // Tries multiple possible paths to find the texture file
+        auto LoadTextureFromFile = [&](const std::string& filepath) -> int {
+            // Try multiple possible paths
+            std::vector<std::string> possible_paths = {
+                filepath,                                    // Original path
+                grassland::FindAssetFile(filepath),         // Through FindAssetFile
+                "../" + filepath,                           // Relative from build dir
+                "../../" + filepath,                         // From build/src
+            };
+            
+            std::string full_path;
+            for (const auto& path : possible_paths) {
+                if (path.empty()) continue;
+                
+                // Check if file exists
+                std::ifstream test_file(path, std::ios::binary);
+                if (test_file.good()) {
+                    full_path = path;
+                    test_file.close();
+                    break;
+                }
+            }
+            
+            if (full_path.empty()) {
+                grassland::LogError("Failed to find texture file: {}", filepath);
+                grassland::LogError("Tried paths:");
+                for (const auto& path : possible_paths) {
+                    if (!path.empty()) {
+                        grassland::LogError("  - {}", path);
+                    }
+                }
+                return -1;
+            }
+            
+            int w, h, comp;
+            unsigned char* data = stbi_load(full_path.c_str(), &w, &h, &comp, 4);
+            if (!data) {
+                grassland::LogError("Failed to load texture: {} (full path: {})", filepath, full_path);
+                return -1;
+            }
+            
+            std::unique_ptr<grassland::graphics::Image> texture;
+            core_->CreateImage(w, h, grassland::graphics::IMAGE_FORMAT_R8G8B8A8_UNORM, &texture);
+            texture->UploadData(data);
+            
+            int tex_index = scene_->AddTexture(std::move(texture));
+            stbi_image_free(data);
+            
+            grassland::LogInfo("Loaded texture: {} -> index {} (from: {})", filepath, tex_index, full_path);
+            return tex_index;
+        };
+        
+        // Load Metal053B texture files
+        // Note: Path should be relative to assets directory or use FindAssetFile
+        // Use the masked texture with transparency for rust color (background removed)
+        // Try multiple possible paths for the masked texture
+        int rust_color_tex = LoadTextureFromFile("build/src/Debug/Metal053B_1K-JPG/Metal053B_1K-JPG_Color_Masked.png");
+        if (rust_color_tex < 0) {
+            rust_color_tex = LoadTextureFromFile("Metal053B_1K-JPG/Metal053B_1K-JPG_Color_Masked.png");
+        }
+        if (rust_color_tex < 0) {
+            rust_color_tex = LoadTextureFromFile("../build/src/Debug/Metal053B_1K-JPG/Metal053B_1K-JPG_Color_Masked.png");
+        }
+        // Fallback to original if masked version not found
+        if (rust_color_tex < 0) {
+            grassland::LogWarning("Masked texture not found, trying original Color.jpg");
+            rust_color_tex = LoadTextureFromFile("Metal053B_1K-JPG/Metal053B_1K-JPG_Color.jpg");
+        }
+        int rust_metallic_tex = LoadTextureFromFile("Metal053B_1K-JPG/Metal053B_1K-JPG_Metalness.jpg");
+        int rust_roughness_tex = LoadTextureFromFile("Metal053B_1K-JPG/Metal053B_1K-JPG_Roughness.jpg");
+        int rust_normal_tex = LoadTextureFromFile("Metal053B_1K-JPG/Metal053B_1K-JPG_NormalGL.jpg");
+        
+        // Create Layer 1 (Base Layer): Green Iron (always create this)
+        Material green_iron(
+            glm::vec4(0.0f, 0.8f, 0.2f, 1.0f),  // Green base color
+            -1,                                  // No texture, use solid color
+            0.3f,                                // Roughness: relatively smooth
+            0.9f,                                // Metallic: high metalness
+            -1,                                  // No metallic_roughness texture
+            glm::vec3(0.0f),                     // No emission
+            -1,                                  // No emissive texture
+            1.0f,                                // AO strength
+            -1,                                  // No AO texture
+            1.0f,                                // Normal scale
+            -1,                                  // No normal texture
+            0.0f, 0.0f,                          // No clearcoat
+            0,                                   // alpha_mode: OPAQUE
+            0.0f,                                // transmission: opaque
+            1.45f,                               // ior
+            0.0f                                 // dispersion
         );
-        scene_->AddEntity(cc_sphere);
-    }
-
-    {
-        Material blueMat;
-        blueMat.base_color_factor = glm::vec4(0.05f, 0.4f, 0.05f, 1.0f);
-        blueMat.roughness_factor = 0.5f;
-        blueMat.metallic_factor = 0.0f;
-
-        auto blue_cube = std::make_shared<Entity>(
+        
+        // Create cube entity with base material (always create, even if textures fail)
+        auto multi_layer_cube = std::make_shared<Entity>(
             "meshes/cube.obj",
-            blueMat,
-            glm::translate(glm::mat4(1.0f), glm::vec3(2.5f, 0.0f, 0.0f))
+            green_iron,
+            glm::translate(glm::mat4(1.0f), glm::vec3(1.5f, 0.5f, 0.0f))
         );
-        scene_->AddEntity(blue_cube);
+        scene_->AddEntity(multi_layer_cube);
+        
+        // Check if textures loaded successfully
+        if (rust_color_tex < 0 || rust_metallic_tex < 0 || rust_roughness_tex < 0 || rust_normal_tex < 0) {
+            grassland::LogWarning("Failed to load some Metal053B textures. Creating cube with single-layer material only.");
+            grassland::LogWarning("Expected files in: assets/Metal053B_1K-JPG/");
+            grassland::LogWarning("  - Metal053B_1K-JPG_Color.jpg");
+            grassland::LogWarning("  - Metal053B_1K-JPG_Metalness.jpg");
+            grassland::LogWarning("  - Metal053B_1K-JPG_Roughness.jpg");
+            grassland::LogWarning("  - Metal053B_1K-JPG_NormalGL.jpg");
+            grassland::LogWarning("Please ensure texture files are in the correct location relative to the executable.");
+            // Entity is already created with base material, so we're done
+        } else {
+            // Create Layer 2 (Outer Layer): Rust (using Metal053B textures)
+            // Note: Since metallic and roughness are separate textures, we use roughness texture
+            // as metallic_roughness_tex. For more accurate results, you could create a combined texture.
+            Material rust_layer(
+                glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),  // Base color factor (will be multiplied by texture)
+                rust_color_tex,                      // Rust color texture
+                0.8f,                                // Roughness factor: high roughness (rust is rough)
+                0.3f,                                // Metallic factor: low metalness (rust is not metal)
+                rust_roughness_tex,                  // Metallic_roughness texture (using roughness texture)
+                                                     // Note: For accurate metallic, create combined texture
+                glm::vec3(0.0f),                     // No emission
+                -1,                                  // No emissive texture
+                1.0f,                                // AO strength
+                -1,                                  // No AO texture
+                1.0f,                                // Normal scale
+                rust_normal_tex,                     // Rust normal texture (OpenGL format)
+                0.0f, 0.0f,                          // No clearcoat
+                0,                                   // alpha_mode: OPAQUE
+                0.0f,                                // transmission: opaque
+                1.45f,                               // ior
+                0.0f                                 // dispersion
+            );
+            
+            // Apply multi-layer material
+            scene_->ApplyMultiLayerMaterial(
+                scene_->GetEntityCount() - 1,  // Entity index (last added)
+                rust_layer,                     // Layer 2 material
+                0.0f,                           // thin: 0.0 = thick layer (opaque)
+                0.6f,                           // blend_factor: 0.6 = 60% rust coverage
+                0.0f                            // layer_thickness: not needed for thick layer
+            );
+            
+            grassland::LogInfo("Created multi-layer material cube: Green Iron + Rust");
+        }
     }
+
 
     if (scene_->GetBaseColorTextureCount() == 0) {
         std::unique_ptr<grassland::graphics::Image> dummy_tex;
@@ -352,7 +476,7 @@ void Application::OnInit() {
         dummy_tex->UploadData(&white);
         scene_->AddTexture(std::move(dummy_tex));
     }
-*/
+// */
     /*
     Light sunLight;
     sunLight.type = LIGHT_SUN;

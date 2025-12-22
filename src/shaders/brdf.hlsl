@@ -65,5 +65,63 @@ float3 eval_brdf(float3 N, float3 L, float3 V, float3 albedo, float roughness, f
     return base_layer;
 }
 
+// ============================================================================
+// Multi-Layer Material BRDF Evaluation
+// ============================================================================
+
+float3 eval_brdf_multi_layer(
+    float3 N, float3 L, float3 V,
+    // Layer 1 (Base Layer) properties
+    float3 albedo_layer1, float roughness_layer1, float metallic_layer1, 
+    float ao_layer1, float clearcoat_layer1, float clearcoat_roughness_layer1,
+    // Layer 2 (Outer Layer) properties
+    float3 albedo_layer2, float roughness_layer2, float metallic_layer2,
+    float ao_layer2, float clearcoat_layer2, float clearcoat_roughness_layer2,
+    // Multi-layer control parameters
+    float thin, float blend_factor, float layer_thickness,
+    // Layer 2 alpha (for transparency support)
+    float alpha_layer2
+) {
+    // Evaluate BRDF for both layers
+    float3 brdf_layer1 = eval_brdf(N, L, V, albedo_layer1, roughness_layer1, metallic_layer1, ao_layer1, clearcoat_layer1, clearcoat_roughness_layer1);
+    float3 brdf_layer2 = eval_brdf(N, L, V, albedo_layer2, roughness_layer2, metallic_layer2, ao_layer2, clearcoat_layer2, clearcoat_roughness_layer2);
+    
+    // Combine blend_factor with alpha_layer2 for transparency support
+    // If alpha is 0 (fully transparent), show only layer 1
+    // If alpha is 1 (fully opaque), use blend_factor as normal
+    float effective_blend = blend_factor * alpha_layer2;
+    
+    // Determine if thin layer mode (thin >= 0.5) or thick layer mode (thin < 0.5)
+    if (thin < 0.5) {
+        // ========================================================================
+        // Thick Layer Mode: Simple linear blending with alpha support
+        // ========================================================================
+        return lerp(brdf_layer1, brdf_layer2, effective_blend);
+    } else {
+        // ========================================================================
+        // Thin Layer Mode: Energy-conserving optical blending
+        // ========================================================================
+        float NdotV = max(dot(N, V), eps);
+        
+        // Compute Fresnel term for layer interaction
+        // Use average IOR for simplicity (can be improved with actual IOR values)
+        float avg_ior = 1.45; // Default IOR
+        float3 F0 = float3(0.04, 0.04, 0.04);
+        float F = F_Schlick(F0, NdotV).r;
+        
+        // Energy-conserving blend: outer layer reflects, inner layer transmits
+        // For thin layers, we consider that light can pass through the outer layer
+        // Apply alpha_layer2 to control transparency
+        float transmission_factor = 1.0 - F * effective_blend;
+        float reflection_factor = F * effective_blend;
+        
+        // Blend: inner layer (transmitted) + outer layer (reflected)
+        float3 final_brdf = brdf_layer1 * transmission_factor + brdf_layer2 * reflection_factor;
+        
+        // Ensure energy conservation
+        return max(final_brdf, float3(0.0, 0.0, 0.0));
+    }
+}
+
 #endif // BRDF_HLSL
 

@@ -69,9 +69,9 @@
     // if not hit, accumulate sky color and break
     if (!payload.hit) {
       // gradient sky 
-      // float t = 0.5 * (normalize(ray.Direction).y + 1.0);
-      // float3 sky_color = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
-      // radiance += throughput * sky_color;
+      float t = 0.5 * (normalize(ray.Direction).y + 1.0);
+      float3 sky_color = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
+      radiance += throughput * sky_color;
       break;
     }
 
@@ -263,7 +263,23 @@
     if (cos_theta <= 0.0) break;
 
     // evaluate brdf and update throughput
-    float3 brdf = eval_brdf(N, next_dir, V, payload.albedo, payload.roughness, payload.metallic, payload.ao, payload.clearcoat, payload.clearcoat_roughness);
+    // Check if multi-layer material (blend_factor > 0 means multi-layer is active)
+    float3 brdf;
+    if (payload.blend_factor > 0.0) {
+        // Use multi-layer material BRDF
+        brdf = eval_brdf_multi_layer(
+            N, next_dir, V,
+            payload.albedo, payload.roughness, payload.metallic,
+            payload.ao, payload.clearcoat, payload.clearcoat_roughness,
+            payload.albedo_layer2, payload.roughness_layer2, payload.metallic_layer2,
+            payload.ao_layer2, payload.clearcoat_layer2, payload.clearcoat_roughness_layer2,
+            payload.thin, payload.blend_factor, payload.layer_thickness,
+            payload.alpha_layer2  // Use alpha from texture for transparency
+        );
+    } else {
+        // Use single-layer material BRDF (backward compatible)
+        brdf = eval_brdf(N, next_dir, V, payload.albedo, payload.roughness, payload.metallic, payload.ao, payload.clearcoat, payload.clearcoat_roughness);
+    }
 
     // This part remains the same, we do not change the coeff.
     throughput *= brdf * cos_theta / max(eps, pdf_total);

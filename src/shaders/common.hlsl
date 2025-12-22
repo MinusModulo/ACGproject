@@ -36,6 +36,48 @@ struct Material {
   float ior;
 
   float dispersion;
+
+  // ============================================================================
+  // Multi-Layer Material: Layer 2 (Outer Layer) Properties
+  // ============================================================================
+  
+  // Layer 2 Base Color
+  float4 base_color_factor_layer2;
+  int base_color_tex_layer2;
+
+  // Layer 2 Roughness, Metallic
+  float roughness_factor_layer2;
+  float metallic_factor_layer2;
+  int metallic_roughness_tex_layer2;
+
+  // Layer 2 Emission
+  float3 emissive_factor_layer2;
+  int emissive_texture_layer2;
+
+  // Layer 2 Occlusion
+  float AO_strength_layer2;
+  int AO_texture_layer2;
+
+  // Layer 2 Normal
+  float normal_scale_layer2;
+  int normal_texture_layer2;
+
+  // Layer 2 Clearcoat
+  float clearcoat_factor_layer2;
+  float clearcoat_roughness_factor_layer2;
+
+  // Layer 2 alphaMode
+  int alpha_mode_layer2;
+  
+  // Layer 2 Transmission, IOR
+  float transmission_layer2;
+  float ior_layer2;
+  float dispersion_layer2;
+
+  // Multi-Layer Material Control Parameters
+  float thin;              // 0.0 = 厚层（不透明层），1.0 = 薄层（透明层）
+  float blend_factor;      // 0.0-1.0，控制两层材质的混合强度
+  float layer_thickness;   // 层厚度（用于薄层的光学计算）
 };
 
 struct HoverInfo {
@@ -94,6 +136,29 @@ struct RayPayload {
   float3 direct_light;
 
   uint rng_state;
+
+  // ============================================================================
+  // Multi-Layer Material: Layer 2 Properties
+  // ============================================================================
+  
+  // Layer 2 material properties
+  float3 albedo_layer2;
+  float roughness_layer2;
+  float metallic_layer2;
+  float3 emission_layer2;
+  float ao_layer2;
+  float clearcoat_layer2;
+  float clearcoat_roughness_layer2;
+  float transmission_layer2;
+  float ior_layer2;
+  float dispersion_layer2;
+  int alpha_mode_layer2;
+  float alpha_layer2;
+
+  // Multi-Layer Material Control
+  float thin;
+  float blend_factor;
+  float layer_thickness;
 };
 
 // Constants

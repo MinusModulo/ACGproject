@@ -114,6 +114,26 @@ public:
     // Build linear wrap sampler
     void BuildSampler();
 
+    // ============================================================================
+    // Multi-Layer Material Support
+    // ============================================================================
+    
+    // Get entity by index
+    std::shared_ptr<Entity> GetEntity(size_t index) const {
+        if (index >= entities_.size()) return nullptr;
+        return entities_[index];
+    }
+    
+    // Get core pointer (for texture loading)
+    grassland::graphics::Core* GetCore() const { return core_; }
+    
+    // Apply multi-layer material to an entity
+    void ApplyMultiLayerMaterial(size_t entity_index,
+                                 const Material& layer2,
+                                 float thin = 0.0f,
+                                 float blend_factor = 0.5f,
+                                 float layer_thickness = 0.001f);
+
 private:
     void UpdateMaterialsBuffer();
     void UpdateLightsBuffer();

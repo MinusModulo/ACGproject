@@ -494,3 +494,60 @@ void Scene::LoadFromGLB(const std::string& gltf_path) {
     // Register texture SRVs array to scene for binding
     SetBaseColorTextures(baseColorSRVs);
 }
+
+// ============================================================================
+// Multi-Layer Material Support Implementation
+// ============================================================================
+
+void Scene::ApplyMultiLayerMaterial(size_t entity_index,
+                                    const Material& layer2,
+                                    float thin,
+                                    float blend_factor,
+                                    float layer_thickness) {
+    if (entity_index >= entities_.size()) {
+        grassland::LogError("Invalid entity index: {} (total entities: {})", entity_index, entities_.size());
+        return;
+    }
+    
+    auto entity = entities_[entity_index];
+    if (!entity) {
+        grassland::LogError("Entity at index {} is null", entity_index);
+        return;
+    }
+    
+    // Get first layer material (base layer)
+    Material multi = entity->GetMaterial();
+    
+    // Copy all Layer 2 properties
+    multi.base_color_factor_layer2 = layer2.base_color_factor;
+    multi.base_color_tex_layer2 = layer2.base_color_tex;
+    multi.roughness_factor_layer2 = layer2.roughness_factor;
+    multi.metallic_factor_layer2 = layer2.metallic_factor;
+    multi.metallic_roughness_tex_layer2 = layer2.metallic_roughness_tex;
+    multi.emissive_factor_layer2 = layer2.emissive_factor;
+    multi.emissive_texture_layer2 = layer2.emissive_texture;
+    multi.AO_strength_layer2 = layer2.AO_strength;
+    multi.AO_texture_layer2 = layer2.AO_texture;
+    multi.normal_scale_layer2 = layer2.normal_scale;
+    multi.normal_texture_layer2 = layer2.normal_texture;
+    multi.clearcoat_factor_layer2 = layer2.clearcoat_factor;
+    multi.clearcoat_roughness_factor_layer2 = layer2.clearcoat_roughness_factor;
+    multi.alpha_mode_layer2 = layer2.alpha_mode;
+    multi.transmission_layer2 = layer2.transmission;
+    multi.ior_layer2 = layer2.ior;
+    multi.dispersion_layer2 = layer2.dispersion;
+    
+    // Set multi-layer control parameters
+    multi.thin = thin;
+    multi.blend_factor = blend_factor;
+    multi.layer_thickness = layer_thickness;
+    
+    // Apply the multi-layer material
+    entity->SetMaterial(multi);
+    
+    // Update materials buffer
+    UpdateMaterialsBuffer();
+    
+    grassland::LogInfo("Applied multi-layer material to entity {}: thin={}, blend_factor={}, layer_thickness={}",
+                     entity_index, thin, blend_factor, layer_thickness);
+}
