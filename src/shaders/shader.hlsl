@@ -12,6 +12,15 @@
 #include "shadow.hlsl"
 #include "direct_lighting.hlsl"
 
+bool dead() {
+  int i = 2;
+  while (i >= 0) {
+    if (i == 2) i -= 2;
+    else i += 2;
+  }
+  return true;
+}
+
 // ============================================================================
 // Ray Generation Shader - 路径追踪主循环
 // ============================================================================

@@ -457,8 +457,10 @@ void Scene::LoadFromGLB(const std::string& gltf_path) {
                 int alphaMode = 0;
                 if (gm.alphaMode == "MASK") {
                     alphaMode = 1;
+                    grassland::LogInfo("Material uses MASK alpha mode {}", node.name);
                 } else if (gm.alphaMode == "BLEND") {
                     alphaMode = 2;
+                    grassland::LogInfo("Material uses BLEND alpha mode {}", node.name);
                 } else {
                     alphaMode = 0;
                 }
@@ -469,8 +471,10 @@ void Scene::LoadFromGLB(const std::string& gltf_path) {
                     emissive, emissiveTexIndex, 
                     aoStrength, aoTexIndex,
                     normalScale, normalTexIndex,
+                    0.0f, 0.0f,
                     alphaMode,
-                    0.0f, 1.45f
+                    0.0f, 1.45f,
+                    0.0f
                 );
             }
 

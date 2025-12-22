@@ -973,6 +973,13 @@ void Application::RenderEntityPanel() {
         // Material information
         ImGui::SeparatorText("Material");
         Material mat = entity->GetMaterial();
+        if (mat.base_color_factor != glm::vec4(0.0f)) {
+            ImGui::Text("alpha mode : %s", 
+                        mat.alpha_mode == 0 ? "OPAQUE" : 
+                        (mat.alpha_mode == 1 ? "MASK" : "BLEND"));
+        } else {
+            ImGui::TextDisabled("No material assigned");
+        }
         
         ImGui::Spacing();
         
