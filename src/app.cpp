@@ -485,6 +485,47 @@ void Application::OnInit() {
     sunLight.direction = glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f));
     scene_->AddLight(sunLight);
     */
+    // Load Skybox Texture
+    {
+        std::string skybox_path = "sunset.hdr";
+        // Try to find it
+        std::string full_path = skybox_path;
+        std::ifstream test_file(full_path, std::ios::binary);
+        if (!test_file.good()) {
+             // If not in current dir, try looking in common build output directories relative to CWD if CWD is project root
+             // But user said "same directory as .exe", so if we run from .exe dir, it should be found.
+             // We'll just keep the simple check.
+             full_path = "";
+        } else {
+            test_file.close();
+        }
+        
+        if (!full_path.empty()) {
+            int w, h, comp;
+            float* data = stbi_loadf(full_path.c_str(), &w, &h, &comp, 4);
+            if (data) {
+                std::unique_ptr<grassland::graphics::Image> skybox_tex;
+                core_->CreateImage(w, h, grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT, &skybox_tex);
+                skybox_tex->UploadData(data);
+                scene_->SetSkyboxTexture(std::move(skybox_tex));
+                stbi_image_free(data);
+                grassland::LogInfo("Loaded skybox texture: {}", full_path);
+            } else {
+                grassland::LogError("Failed to load skybox texture: {}", full_path);
+            }
+        } 
+        
+        if (!scene_->GetSkyboxTexture()) {
+             // Create default white skybox
+             std::unique_ptr<grassland::graphics::Image> skybox_tex;
+             core_->CreateImage(1, 1, grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT, &skybox_tex);
+             float white[] = {1.0f, 1.0f, 1.0f, 1.0f};
+             skybox_tex->UploadData(white);
+             scene_->SetSkyboxTexture(std::move(skybox_tex));
+             grassland::LogWarning("Skybox texture not found or failed to load, using default white.");
+        }
+    }
+
     // Build acceleration structures
     scene_->BuildAccelerationStructures();
 
@@ -568,6 +609,7 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER,
                                                              scene_->GetEntityCount());          // space14 - tangent buffers
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space15 - lights buffer
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, 1);                   // space16 - skybox texture
     program_->Finalize();
 }
 
@@ -1046,6 +1088,7 @@ void Application::OnRender() {
     command_context->CmdBindResources(13, scene_->GetNormalBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(14, scene_->GetTangentBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
 	command_context->CmdBindResources(15, { scene_->GetLightsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(16, { scene_->GetSkyboxTexture() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdDispatchRays(window_->GetWidth(), window_->GetHeight(), 1);
 
     // When camera is disabled, increment sample count and use accumulated image

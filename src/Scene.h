@@ -134,6 +134,12 @@ public:
                                  float blend_factor = 0.5f,
                                  float layer_thickness = 0.001f);
 
+    // Set skybox texture
+    void SetSkyboxTexture(std::unique_ptr<grassland::graphics::Image> texture);
+    
+    // Get skybox texture
+    grassland::graphics::Image* GetSkyboxTexture() const { return skybox_texture_.get(); }
+
 private:
     void UpdateMaterialsBuffer();
     void UpdateLightsBuffer();
@@ -151,6 +157,7 @@ private:
     std::vector<grassland::graphics::Buffer*> texcoord_buffers_;
     std::vector<grassland::graphics::Image*> base_color_srvs_;
     std::vector<std::unique_ptr<grassland::graphics::Image>> texture_storage_; // Owns the textures
+    std::unique_ptr<grassland::graphics::Image> skybox_texture_;
     grassland::graphics::Sampler* linear_wrap_sampler_ = nullptr;
 };
 

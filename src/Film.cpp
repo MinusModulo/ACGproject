@@ -59,10 +59,52 @@ void Film::DevelopToOutput() {
     std::vector<float> accumulated_colors(width_ * height_ * 4);
     accumulated_color_image_->DownloadData(accumulated_colors.data());
 
-    // Divide by sample count to get average
+    // Calculate average color and luminance for auto-exposure
+    std::vector<glm::vec3> linear_colors(width_ * height_);
+    float log_luminance_sum = 0.0f;
+    int valid_pixels = 0;
+
+    for (int i = 0; i < width_ * height_; i++) {
+        float r = accumulated_colors[i * 4 + 0] / static_cast<float>(sample_count_);
+        float g = accumulated_colors[i * 4 + 1] / static_cast<float>(sample_count_);
+        float b = accumulated_colors[i * 4 + 2] / static_cast<float>(sample_count_);
+        
+        linear_colors[i] = glm::vec3(r, g, b);
+        
+        float lum = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+        if (lum > 0.0001f) {
+            log_luminance_sum += std::log(lum);
+            valid_pixels++;
+        }
+    }
+    
+    // Geometric mean of luminance
+    float avg_luminance = 0.5f; // Default fallback
+    if (valid_pixels > 0) {
+        avg_luminance = std::exp(log_luminance_sum / valid_pixels);
+    }
+    
+    // Target luminance (key value)
+    float key_value = 0.18f;
+    float exposure = key_value / std::max(avg_luminance, 0.0001f);
+
+    // Apply tone mapping
     std::vector<float> output_colors(width_ * height_ * 4);
-    for (int i = 0; i < width_ * height_ * 4; i++) {
-        output_colors[i] = accumulated_colors[i] / static_cast<float>(sample_count_);
+    for (int i = 0; i < width_ * height_; i++) {
+        glm::vec3 color = linear_colors[i] * exposure;
+        
+        // ACES Tone Mapping
+        float a = 2.51f;
+        float b = 0.03f;
+        float c = 2.43f;
+        float d = 0.59f;
+        float e = 0.14f;
+        color = glm::clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0f, 1.0f);
+        
+        output_colors[i * 4 + 0] = color.r;
+        output_colors[i * 4 + 1] = color.g;
+        output_colors[i * 4 + 2] = color.b;
+        output_colors[i * 4 + 3] = 1.0f;
     }
 
     // Upload to output image

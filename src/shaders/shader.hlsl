@@ -21,6 +21,15 @@ bool dead() {
   return true;
 }
 
+float3 ACESFilm(float3 x) {
+    float a = 2.51f;
+    float b = 0.03f;
+    float c = 2.43f;
+    float d = 0.59f;
+    float e = 0.14f;
+    return saturate((x*(a*x+b))/(x*(c*x+d)+e));
+}
+
 // ============================================================================
 // Ray Generation Shader - 路径追踪主循环
 // ============================================================================
@@ -77,10 +86,7 @@ bool dead() {
 
     // if not hit, accumulate sky color and break
     if (!payload.hit) {
-      // gradient sky 
-      // float t = 0.5 * (normalize(ray.Direction).y + 1.0);
-      // float3 sky_color = lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
-      // radiance += throughput * sky_color;
+      radiance += throughput * payload.emission;
       break;
     }
 
@@ -316,7 +322,9 @@ bool dead() {
     payload.rng_state = rng_state;
   }
   // Write outputs
-  output[pixel_coords] = float4(radiance, 1.0);
+  // Apply ACES Tone Mapping for real-time display
+  float3 mapped_radiance = ACESFilm(radiance);
+  output[pixel_coords] = float4(mapped_radiance, 1.0);
 
   accumulated_color[pixel_coords] = accumulated_color[pixel_coords] + float4(radiance, 1.0);
   accumulated_samples[pixel_coords] = frame_count + 1;

@@ -182,6 +182,7 @@ SamplerState LinearWrap : register(s0, space12);
 StructuredBuffer<float3> Normals[] : register(t0, space13);
 StructuredBuffer<float3> Tangents[] : register(t0, space14);
 StructuredBuffer<Light> Lights : register(t0, space15);
+Texture2D<float4> SkyboxTexture : register(t0, space16);
 
 #endif // COMMON_HLSL
 

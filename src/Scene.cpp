@@ -40,6 +40,10 @@ int Scene::AddTexture(std::unique_ptr<grassland::graphics::Image> texture) {
     return static_cast<int>(base_color_srvs_.size() - 1);
 }
 
+void Scene::SetSkyboxTexture(std::unique_ptr<grassland::graphics::Image> texture) {
+    skybox_texture_ = std::move(texture);
+}
+
 void Scene::ClearLights() {
     lights_.clear();
     lights_buffer_.reset();
