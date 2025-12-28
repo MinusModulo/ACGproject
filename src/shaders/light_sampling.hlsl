@@ -42,5 +42,12 @@ float3 SampleAreaLight(Light light, float3 position, out float3 light_dir, inout
 	return light.color * light.intensity;
 }
 
+	// Directional (sun) light: delta distribution with no distance falloff
+	float3 SampleSunLight(Light light, out float3 light_dir, out float inv_pdf) {
+	    light_dir = normalize(-light.direction);
+	    inv_pdf = 1.0f; // delta distribution
+	    return light.color * light.intensity;
+	}
+
 #endif // LIGHT_SAMPLING_HLSL
 

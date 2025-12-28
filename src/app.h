@@ -18,6 +18,11 @@ struct VolumeRegion {
     float pad1;
 };
 
+struct SkyInfo {
+    int use_skybox;
+    float pad_sky[3];
+};
+
 class Application {
 public:
     Application(grassland::graphics::BackendAPI api = grassland::graphics::BACKEND_API_DEFAULT);
@@ -56,6 +61,7 @@ private:
     };
     std::unique_ptr<grassland::graphics::Buffer> hover_info_buffer_;
     std::unique_ptr<grassland::graphics::Buffer> volume_info_buffer_;
+    std::unique_ptr<grassland::graphics::Buffer> sky_info_buffer_;
 
     // Shaders
     std::unique_ptr<grassland::graphics::Shader> raygen_shader_;

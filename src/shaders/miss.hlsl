@@ -14,7 +14,9 @@ float2 DirectionToEquirectangularUV(float3 direction) {
   payload.hit = false;
   float3 ray_dir = normalize(WorldRayDirection());
   float2 uv = DirectionToEquirectangularUV(ray_dir);
-  float3 sky_color = SkyboxTexture.SampleLevel(LinearWrap, uv, 0).rgb;
+  float3 sky_color = (sky_info.use_skybox != 0)
+    ? SkyboxTexture.SampleLevel(LinearWrap, uv, 0).rgb
+    : float3(0.0, 0.0, 0.0);
   payload.emission = sky_color;
 }
 

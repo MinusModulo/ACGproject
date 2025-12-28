@@ -94,6 +94,11 @@ struct VolumeRegion {
     float pad1;
 };
 
+struct SkyInfo {
+  int use_skybox;
+  float3 pad_sky;
+};
+
 struct Light {
   int type;
   float3 color;
@@ -193,6 +198,7 @@ StructuredBuffer<float3> Tangents[] : register(t0, space14);
 StructuredBuffer<Light> Lights : register(t0, space15);
 Texture2D<float4> SkyboxTexture : register(t0, space16);
 ConstantBuffer<VolumeRegion> volume_info : register(b0, space17);
+ConstantBuffer<SkyInfo> sky_info : register(b0, space18);
 
 #endif // COMMON_HLSL
 

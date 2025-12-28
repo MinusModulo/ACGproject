@@ -226,6 +226,8 @@ void Application::OnInit() {
     // Call Load from glb function
     scene_->LoadFromGLB("new_scene.glb");
 
+    bool skybox_enabled = false;
+
     // Add some default lights
     // Temporarily remove point light and add area light nearby
     /*
@@ -237,6 +239,7 @@ void Application::OnInit() {
     scene_->AddLight(pointLight);
     */
 
+#if 0 // Temporary: disable all existing lights
     Light areaLight;
     areaLight.type = LIGHT_AREA; // Area light
     areaLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
@@ -246,6 +249,17 @@ void Application::OnInit() {
     areaLight.u = glm::vec3(2.0f, 0.0f, 0.0f); // Width vector
     areaLight.v = glm::vec3(0.0f, 0.0f, 2.0f); // Height vector
     scene_->AddLight(areaLight);
+#endif
+
+    // Simple sunlight (directional)
+    {
+        Light sunLight{};
+        sunLight.type = LIGHT_SUN;
+        sunLight.color = glm::vec3(1.0f, 0.95f, 0.9f);
+        sunLight.intensity = 3.0f;
+        sunLight.direction = glm::normalize(glm::vec3(-1.0f, -1.2f, -0.8f));
+        scene_->AddLight(sunLight);
+    }
     /*
     // Add glass sphere around the area light
     Material glassMaterial;
@@ -485,6 +499,7 @@ void Application::OnInit() {
     sunLight.direction = glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f));
     scene_->AddLight(sunLight);
     */
+#if 0 // Temporary: disable HDRI/skybox lighting
     // Load Skybox Texture
     {
         std::string skybox_path = "sunset.hdr";
@@ -525,6 +540,21 @@ void Application::OnInit() {
              grassland::LogWarning("Skybox texture not found or failed to load, using default white.");
         }
     }
+#endif
+
+    // Ensure a valid skybox texture exists (even when HDRI loading is disabled)
+    skybox_enabled = false;
+    if (!scene_->GetSkyboxTexture()) {
+        std::unique_ptr<grassland::graphics::Image> skybox_tex;
+        core_->CreateImage(1, 1, grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT, &skybox_tex);
+        float black[] = {0.0f, 0.0f, 0.0f, 0.0f};
+        skybox_tex->UploadData(black);
+        scene_->SetSkyboxTexture(std::move(skybox_tex));
+        grassland::LogInfo("Created default skybox (black 1x1) because none was provided.");
+        skybox_enabled = false;
+    } else {
+        skybox_enabled = true;
+    }
 
     // Build acceleration structures
     scene_->BuildAccelerationStructures();
@@ -552,6 +582,12 @@ void Application::OnInit() {
     initial_volume.sigma_t = 0.6f;
     initial_volume.sigma_s = glm::vec3(0.2f, 0.2f, 0.2f);
     volume_info_buffer_->UploadData(&initial_volume, sizeof(VolumeRegion));
+
+    // Create skybox enable buffer
+    core_->CreateBuffer(sizeof(SkyInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &sky_info_buffer_);
+    SkyInfo sky_info{};
+    sky_info.use_skybox = skybox_enabled ? 1 : 0;
+    sky_info_buffer_->UploadData(&sky_info, sizeof(SkyInfo));
 
     // Initialize camera state member variables
     camera_pos_ = glm::vec3{ 0.0f, 1.0f, 5.0f };
@@ -620,6 +656,7 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space15 - lights buffer
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, 1);                   // space16 - skybox texture
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space17 - volume info
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space18 - sky info
     program_->Finalize();
 }
 
@@ -1101,6 +1138,7 @@ void Application::OnRender() {
 	command_context->CmdBindResources(15, { scene_->GetLightsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(16, { scene_->GetSkyboxTexture() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(17, { volume_info_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(18, { sky_info_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdDispatchRays(window_->GetWidth(), window_->GetHeight(), 1);
 
     // When camera is disabled, increment sample count and use accumulated image

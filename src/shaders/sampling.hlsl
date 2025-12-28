@@ -99,6 +99,9 @@ float pdf_light_for_direction(
     if (light.type == 0) {
         // Point light: delta distribution, PDF is infinite (handled separately)
         return 1.0; // For point lights, we use inv_pdf = 1.0, so pdf = 1.0
+    } else if (light.type == 2) {
+      // Directional (sun) light: delta distribution
+      return 1.0;
     } else if (light.type == 1) {
         // Area light: uniform sampling on light surface
         float area = length(cross(light.u, light.v));

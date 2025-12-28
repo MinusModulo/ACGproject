@@ -75,6 +75,10 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_di
     // For point lights, inv_pdf = 1.0, so pdf = 1.0 (delta distribution)
     pdf_light = 1.0;
     max_distance = length(light.position - position);
+  } else if (light.type == 2) {
+    radiance_light = SampleSunLight(light, light_dir, inv_pdf_light);
+    pdf_light = 1.0; // delta directional light
+    max_distance = 1e9; // effectively infinite
   } else if (light.type == 1) {
     float3 sampled_point;
     radiance_light = SampleAreaLight(light, position, light_dir, inv_pdf_light, sampled_point, rng_state);
@@ -93,6 +97,9 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_di
     if (light.type == 0) {
       // Point light: use fixed small angle
       light_solid_angle = 0.01; // ~0.57 degrees
+    } else if (light.type == 2) {
+      // Directional light: extremely small apparent size
+      light_solid_angle = 0.001;
     } else if (light.type == 1) {
       // Area light: calculate actual solid angle
       float area = length(cross(light.u, light.v));
@@ -187,9 +194,9 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_di
   float NdotL_brdf = max(dot(normal, brdf_dir), 0.0);
   if (NdotL_brdf > 0.0) {
     // Check if BRDF direction hits the light
-    float3 brdf_to_light = light.type == 0 ? 
-      normalize(light.position - position) : 
-      normalize(light.position - position); // For area lights, use center for simplicity
+    float3 brdf_to_light = (light.type == 0) ?
+      normalize(light.position - position) :
+      ((light.type == 2) ? normalize(-light.direction) : normalize(light.position - position));
     
     float cos_angle = dot(brdf_dir, brdf_to_light);
     
@@ -199,6 +206,9 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_di
     if (light.type == 0) {
       // Point light: check if direction is close (within small angle)
       hits_light = cos_angle > 0.99; // ~8 degrees
+    } else if (light.type == 2) {
+      // Sun light: very sharp directional lobe
+      hits_light = cos_angle > 0.995; // tighter than point
     } else if (light.type == 1) {
       // Area light: check if ray intersects the light plane
       // Simplified: check if direction is roughly towards light center
@@ -214,6 +224,9 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_di
         dist_to_light = length(light.position - position);
         float dist_sq = dist_to_light * dist_to_light;
         light_radiance_brdf = light.color * light.intensity / dist_sq;
+      } else if (light.type == 2) {
+        dist_to_light = 1e9; // effectively infinite
+        light_radiance_brdf = light.color * light.intensity;
       } else if (light.type == 1) {
         // For area lights, use average distance and radiance
         dist_to_light = length(light.position - position);
@@ -242,8 +255,8 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_di
   // ========================================================================
   if (light_sample_valid) {
     // For point lights, use original NEE formula (delta distribution, no MIS needed)
-    if (light.type == 0) {
-      // Point light: use original formula (inv_pdf = 1.0)
+    if (light.type == 0 || light.type == 2) {
+      // Delta lights: use original formula (inv_pdf = 1.0)
       direct_light += contribution_light;
     } else {
       // Area light: use MIS with safe power heuristic
@@ -314,9 +327,13 @@ float3 EvaluateLightMultiLayer(
     bool light_sample_valid = false;
     
     if (light.type == 0) {
-        radiance_light = SamplePointLight(light, position, light_dir, inv_pdf_light);
-        pdf_light = 1.0;
-        max_distance = length(light.position - position);
+      radiance_light = SamplePointLight(light, position, light_dir, inv_pdf_light);
+      pdf_light = 1.0;
+      max_distance = length(light.position - position);
+    } else if (light.type == 2) {
+      radiance_light = SampleSunLight(light, light_dir, inv_pdf_light);
+      pdf_light = 1.0;
+      max_distance = 1e9;
     } else if (light.type == 1) {
         float3 sampled_point;
         radiance_light = SampleAreaLight(light, position, light_dir, inv_pdf_light, sampled_point, rng_state);
@@ -332,7 +349,9 @@ float3 EvaluateLightMultiLayer(
         // Calculate light solid angle to determine appropriate roughness clamping
         float light_solid_angle = 0.0;
         if (light.type == 0) {
-            light_solid_angle = 0.01; // ~0.57 degrees
+          light_solid_angle = 0.01; // ~0.57 degrees
+        } else if (light.type == 2) {
+          light_solid_angle = 0.001;
         } else if (light.type == 1) {
             float area = length(cross(light.u, light.v));
             float dist_sq = max(dot(light.position - position, light.position - position), 0.01);
@@ -430,12 +449,14 @@ float3 EvaluateLightMultiLayer(
     
     float NdotL_brdf = max(dot(normal, brdf_dir), 0.0);
     if (NdotL_brdf > 0.0) {
-        float3 brdf_to_light = normalize(light.position - position);
+      float3 brdf_to_light = (light.type == 2) ? normalize(-light.direction) : normalize(light.position - position);
         float cos_angle = dot(brdf_dir, brdf_to_light);
         
         bool hits_light = false;
         if (light.type == 0) {
             hits_light = cos_angle > 0.99;
+      } else if (light.type == 2) {
+        hits_light = cos_angle > 0.995;
         } else if (light.type == 1) {
             hits_light = cos_angle > 0.9;
         }
@@ -445,12 +466,15 @@ float3 EvaluateLightMultiLayer(
             float dist_to_light = 0.0;
             
             if (light.type == 0) {
-                dist_to_light = length(light.position - position);
-                float dist_sq = dist_to_light * dist_to_light;
-                light_radiance_brdf = light.color * light.intensity / dist_sq;
+              dist_to_light = length(light.position - position);
+              float dist_sq = dist_to_light * dist_to_light;
+              light_radiance_brdf = light.color * light.intensity / dist_sq;
+            } else if (light.type == 2) {
+              dist_to_light = 1e9;
+              light_radiance_brdf = light.color * light.intensity;
             } else if (light.type == 1) {
-                dist_to_light = length(light.position - position);
-                light_radiance_brdf = light.color * light.intensity;
+              dist_to_light = length(light.position - position);
+              light_radiance_brdf = light.color * light.intensity;
             }
             
             if (!CastShadowRay(position + normal * 1e-3, brdf_dir, dist_to_light - 1e-3)) {
@@ -486,8 +510,8 @@ float3 EvaluateLightMultiLayer(
     // ========================================================================
     if (light_sample_valid) {
         // For point lights, use original NEE formula (delta distribution, no MIS needed)
-        if (light.type == 0) {
-            // Point light: use original formula (inv_pdf = 1.0)
+      if (light.type == 0 || light.type == 2) {
+        // Delta lights: use original formula (inv_pdf = 1.0)
             direct_light += contribution_light;
         } else {
             // Area light: use MIS with safe power heuristic
