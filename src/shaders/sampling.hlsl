@@ -100,8 +100,11 @@ float pdf_light_for_direction(
         // Point light: delta distribution, PDF is infinite (handled separately)
         return 1.0; // For point lights, we use inv_pdf = 1.0, so pdf = 1.0
     } else if (light.type == 2) {
-      // Directional (sun) light: delta distribution
-      return 1.0;
+        float theta = max(light.angular_radius, 1e-4);
+        float cosThetaMax = cos(theta);
+        float solid_angle = max(2.0 * PI * (1.0 - cosThetaMax), 1e-6);
+        float cos_angle = dot(normalize(-light.direction), normalize(light_dir));
+        return (cos_angle >= cosThetaMax) ? (1.0 / solid_angle) : 0.0;
     } else if (light.type == 1) {
         // Area light: uniform sampling on light surface
         float area = length(cross(light.u, light.v));

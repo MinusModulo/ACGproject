@@ -29,7 +29,18 @@ void Scene::AddEntity(std::shared_ptr<Entity> entity) {
     grassland::LogInfo("Added entity to scene (total: {})", entities_.size());
 }
 void Scene::AddLight(const Light& light) {
-    lights_.push_back(light);
+    Light l = light; // Make a local copy so we can sanitize defaults.
+
+    // Ensure sun light uses angular-radius sampling (no distance attenuation).
+    if (l.type == LIGHT_SUN && l.angular_radius <= 0.0f) {
+        l.angular_radius = 0.0047f; // ~0.27° half-angle (approx real sun)
+    }
+
+    if (l.type != LIGHT_SUN) {
+        l.angular_radius = 0.0f; // Not used by point/area lights
+    }
+
+    lights_.push_back(l);
     UpdateLightsBuffer();
 }
 

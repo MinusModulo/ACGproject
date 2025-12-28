@@ -240,10 +240,11 @@ void Application::OnInit() {
     */
 
 #if 0 // Temporary: disable all existing lights
-    Light areaLight;
+    Light areaLight{};
     areaLight.type = LIGHT_AREA; // Area light
     areaLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
     areaLight.intensity = 30.0f;
+    areaLight.angular_radius = 0.0f;
     areaLight.position = glm::vec3(2.4f, 1.2f, 1.0f); // Near the original point light position
     areaLight.direction = glm::vec3(-1.0f, 0.0f, 0.0f); 
     areaLight.u = glm::vec3(2.0f, 0.0f, 0.0f); // Width vector
@@ -255,9 +256,13 @@ void Application::OnInit() {
     {
         Light sunLight{};
         sunLight.type = LIGHT_SUN;
-        sunLight.color = glm::vec3(1.0f, 0.95f, 0.9f);
-        sunLight.intensity = 3.0f;
-        sunLight.direction = glm::normalize(glm::vec3(-1.0f, -1.2f, -0.8f));
+        sunLight.color = glm::vec3(1.0f, 0.93f, 0.83f);          // Warm peach tone
+        sunLight.intensity = 200.0f;                            // Blender Strength
+        // Blender Angle is a full cone angle; our angular_radius is half-angle in radians
+        sunLight.angular_radius = glm::radians(2.5f);           // 5° / 2
+        // Direction: Blender sun aims along -Z after XYZ Euler (77.202°, -35°, 91.118°)
+        // We store the opposite sign because shader uses -light.direction as incoming light
+        sunLight.direction = glm::normalize(glm::vec3(-0.9782f,  -0.1818f, -0.1059f));
         scene_->AddLight(sunLight);
     }
     /*
@@ -499,7 +504,7 @@ void Application::OnInit() {
     sunLight.direction = glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f));
     scene_->AddLight(sunLight);
     */
-#if 0 // Temporary: disable HDRI/skybox lighting
+  // Temporary: disable HDRI/skybox lighting
     // Load Skybox Texture
     {
         std::string skybox_path = "sunset.hdr";
@@ -540,7 +545,7 @@ void Application::OnInit() {
              grassland::LogWarning("Skybox texture not found or failed to load, using default white.");
         }
     }
-#endif
+
 
     // Ensure a valid skybox texture exists (even when HDRI loading is disabled)
     skybox_enabled = false;

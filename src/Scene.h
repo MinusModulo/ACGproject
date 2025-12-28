@@ -14,7 +14,8 @@ enum LightType {
 struct Light {
     LightType type;
     glm::vec3 color;
-    float intensity;
+    float intensity;            // Radiance scale (no distance falloff)
+    float angular_radius;       // Half-angle in radians for sun; 0 for point/area
 
     glm::vec3 position;
     glm::vec3 direction;

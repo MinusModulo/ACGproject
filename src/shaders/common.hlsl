@@ -103,6 +103,7 @@ struct Light {
   int type;
   float3 color;
   float intensity;
+  float angular_radius; // half-angle in radians for sun lights
 
   float3 position;
   float3 direction;

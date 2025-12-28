@@ -42,12 +42,32 @@ float3 SampleAreaLight(Light light, float3 position, out float3 light_dir, inout
 	return light.color * light.intensity;
 }
 
-	// Directional (sun) light: delta distribution with no distance falloff
-	float3 SampleSunLight(Light light, out float3 light_dir, out float inv_pdf) {
-	    light_dir = normalize(-light.direction);
-	    inv_pdf = 1.0f; // delta distribution
-	    return light.color * light.intensity;
-	}
+// Directional (sun) light: uniform sampling over a cone with half-angle = angular_radius
+float3 SampleSunLight(Light light, out float3 light_dir, out float inv_pdf, inout uint rng_state) {
+	// Build an orthonormal basis around the mean sun direction
+	float3 w = normalize(-light.direction);
+	float3 up = (abs(w.z) < 0.999f) ? float3(0.0f, 0.0f, 1.0f) : float3(1.0f, 0.0f, 0.0f);
+	float3 u = normalize(cross(up, w));
+	float3 v = cross(w, u);
+
+	float theta = max(light.angular_radius, 1e-4); // avoid zero solid angle
+	float cosThetaMax = cos(theta);
+
+	float u1 = rand(rng_state);
+	float u2 = rand(rng_state);
+	float cosTheta = lerp(cosThetaMax, 1.0f, u1);
+	float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
+	float phi = 2.0f * PI * u2;
+
+	light_dir = normalize(
+		u * (sinTheta * cos(phi)) +
+		v * (sinTheta * sin(phi)) +
+		w * cosTheta);
+
+	float solid_angle = max(2.0f * PI * (1.0f - cosThetaMax), 1e-6f);
+	inv_pdf = solid_angle; // pdf = 1 / solid_angle
+	return light.color * light.intensity; // Radiance, no distance falloff
+}
 
 #endif // LIGHT_SAMPLING_HLSL
 
