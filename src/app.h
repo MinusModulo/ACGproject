@@ -20,12 +20,15 @@ struct VolumeRegion {
 
 struct SkyInfo {
     int use_skybox;
-    float pad_sky[3];
+    float env_intensity;
+    float bg_intensity;
+    float pad_sky;
 };
 
 struct RenderSettings {
     int max_bounces;
-    float padding[3];
+    float exposure;
+    float padding[2];
 };
 
 class Application {
@@ -125,4 +128,9 @@ private:
     
     // Entity selection
     int selected_entity_id_; // -1 if no entity selected
+
+    // Rendering controls
+    float exposure_ = 1.0f;
+    float env_intensity_ = 1.0f;
+    float bg_intensity_ = 1.0f;
 };

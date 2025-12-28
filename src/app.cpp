@@ -259,26 +259,27 @@ void Application::OnInit() {
     scene_->AddLight(pointLight);
     */
 
-#if 0 // Temporary: disable all existing lights
+ // Temporary: disable all existing lights
     Light areaLight{};
     areaLight.type = LIGHT_AREA; // Area light
     areaLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
-    areaLight.intensity = 30.0f;
+    areaLight.intensity = 0.0f;
     areaLight.angular_radius = 0.0f;
     areaLight.position = glm::vec3(2.4f, 1.2f, 1.0f); // Near the original point light position
     areaLight.direction = glm::vec3(-1.0f, 0.0f, 0.0f); 
     areaLight.u = glm::vec3(2.0f, 0.0f, 0.0f); // Width vector
     areaLight.v = glm::vec3(0.0f, 0.0f, 2.0f); // Height vector
     scene_->AddLight(areaLight);
-#endif
 
+/*
     // Simple sunlight (directional)
     {
         Light sunLight{};
         sunLight.type = LIGHT_SUN;
         //FFD5B3
         sunLight.color = glm::vec3(1.0f, 0.83f, 0.7f);       // Warm peach tone
-        sunLight.intensity = 200.0f;                            // Blender Strength
+        // Use a higher, more physical-scale strength so indirect bounces carry visible color
+        sunLight.intensity = 700.0f;                          // Blender-ish sun order of magnitude
         // Blender Angle is a full cone angle; our angular_radius is half-angle in radians
         sunLight.angular_radius = glm::radians(2.5f);           // 5° / 2
         // Direction: Blender sun aims along -Z after XYZ Euler (77.202°, -35°, 91.118°)
@@ -286,6 +287,7 @@ void Application::OnInit() {
         sunLight.direction = glm::normalize(glm::vec3(-0.9782f,  -0.1818f, -0.1059f));
         scene_->AddLight(sunLight);
     }
+        */
     /*
     // Add glass sphere around the area light
     Material glassMaterial;
@@ -613,12 +615,15 @@ void Application::OnInit() {
     core_->CreateBuffer(sizeof(SkyInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &sky_info_buffer_);
     SkyInfo sky_info{};
     sky_info.use_skybox = skybox_enabled ? 1 : 0;
+    sky_info.env_intensity = env_intensity_;
+    sky_info.bg_intensity = bg_intensity_;
     sky_info_buffer_->UploadData(&sky_info, sizeof(SkyInfo));
 
     // Render settings buffer (max bounces, etc.)
     core_->CreateBuffer(sizeof(RenderSettings), grassland::graphics::BUFFER_TYPE_DYNAMIC, &render_settings_buffer_);
     RenderSettings render_settings{};
-    render_settings.max_bounces = 8; // sensible default
+    render_settings.max_bounces = 1024;
+    render_settings.exposure = exposure_;
     render_settings_buffer_->UploadData(&render_settings, sizeof(RenderSettings));
 
     // Initialize camera state member variables
@@ -644,7 +649,7 @@ void Application::OnInit() {
     // Set initial camera buffer data
     CameraObject camera_object{};
     camera_object.screen_to_camera = glm::inverse(
-        glm::perspective(glm::radians(60.0f), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 10.0f));
+        glm::perspective(glm::radians(65.5f), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 10.0f));
     camera_object.camera_to_world =
         glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
@@ -812,6 +817,13 @@ void Application::OnUpdate() {
         hover_info.light_count = scene_->GetLightCount();
         hover_info_buffer_->UploadData(&hover_info, sizeof(HoverInfo));
 
+        // Update sky info (environment intensity controls)
+        SkyInfo sky_info{};
+        sky_info.use_skybox = scene_->GetSkyboxTexture() ? 1 : 0;
+        sky_info.env_intensity = env_intensity_;
+        sky_info.bg_intensity = bg_intensity_;
+        sky_info_buffer_->UploadData(&sky_info, sizeof(SkyInfo));
+
         // Update the camera buffer with new position/orientation
         CameraObject camera_object{};
         camera_object.screen_to_camera = glm::inverse(
@@ -819,6 +831,12 @@ void Application::OnUpdate() {
         camera_object.camera_to_world =
             glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
         camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
+
+        // Update render settings (exposure)
+        RenderSettings render_settings{};
+        render_settings.max_bounces = 1024;
+        render_settings.exposure = exposure_;
+        render_settings_buffer_->UploadData(&render_settings, sizeof(RenderSettings));
 
 
         // Optional: Animate entities
@@ -1030,6 +1048,9 @@ void Application::RenderInfoOverlay() {
     ImGui::Text("Backend: %s", 
                 core_->API() == grassland::graphics::BACKEND_API_VULKAN ? "Vulkan" : "D3D12");
     ImGui::Text("Device: %s", core_->DeviceName().c_str());
+
+    ImGui::SliderFloat("Exposure", &exposure_, 0.1f, 2.0f, "%.2f");
+    ImGui::SliderFloat("Env Intensity", &env_intensity_, 0.1f, 2.0f, "%.2f");
     
     ImGui::Spacing();
     
@@ -1284,9 +1305,10 @@ void Application::ExportFrame(const std::string& filename,
         glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
-    // Update render settings
+    // Update render settings (keep exposure consistent with interactive view)
     RenderSettings render_settings{};
     render_settings.max_bounces = max_bounces;
+    render_settings.exposure = exposure_;
     render_settings_buffer_->UploadData(&render_settings, sizeof(RenderSettings));
 
     // Resize render targets to requested resolution

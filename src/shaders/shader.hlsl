@@ -337,10 +337,11 @@ float3 ACESFilm(float3 x) {
     // ========================================================================
     // Russian roulette termination
     float p = saturate(max(throughput.x, max(throughput.y, throughput.z)));
-    p = clamp(p, 0.05, 0.95);
+    // Keep more indirect bounces alive: raise survival floor and soften cap
+    p = clamp(p, 0.10, 0.99);
     
     // Force termination if throughput is too large (prevents fireflies)
-    if (any(throughput > float3(10.0, 10.0, 10.0))) {
+    if (any(throughput > float3(30.0, 30.0, 30.0))) {
       break; // Force termination to prevent firefly
     }
     
@@ -351,8 +352,9 @@ float3 ACESFilm(float3 x) {
     payload.rng_state = rng_state;
   }
   // Write outputs
-  // Apply ACES Tone Mapping for real-time display
-  float3 mapped_radiance = ACESFilm(radiance);
+  // Apply exposure then ACES tone mapping, followed by gamma for display
+  float3 mapped_radiance = ACESFilm(radiance * render_settings.exposure);
+  mapped_radiance = pow(mapped_radiance, 1.0 / 2.2);
   output[pixel_coords] = float4(mapped_radiance, 1.0);
 
   accumulated_color[pixel_coords] = accumulated_color[pixel_coords] + float4(radiance, 1.0);

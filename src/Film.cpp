@@ -87,6 +87,7 @@ void Film::DevelopToOutput() {
     // Target luminance (key value)
     float key_value = 0.18f;
     float exposure = key_value / std::max(avg_luminance, 0.0001f);
+    exposure = glm::clamp(exposure, 0.1f, 2.0f);
 
     // Apply tone mapping
     std::vector<float> output_colors(width_ * height_ * 4);
@@ -100,6 +101,11 @@ void Film::DevelopToOutput() {
         float d = 0.59f;
         float e = 0.14f;
         color = glm::clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0f, 1.0f);
+
+        // Gamma to sRGB-ish for display/export consistency
+        color.r = pow(color.r, 1.0f / 2.2f);
+        color.g = pow(color.g, 1.0f / 2.2f);
+        color.b = pow(color.b, 1.0f / 2.2f);
         
         output_colors[i * 4 + 0] = color.r;
         output_colors[i * 4 + 1] = color.g;

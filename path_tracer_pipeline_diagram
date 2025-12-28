@@ -1,0 +1,49 @@
+digraph PathTracer {
+	fontsize=12 rankdir=LR
+	CPU [label="CPU
+Scene & Camera
+CmdDispatchRays"]
+	RayGen [label="RayGen Shader
+shader.hlsl
+Primary Rays & Path Loop"]
+	Trace [label="TraceRay
+Hardware Ray Tracing"]
+	Miss [label="Miss Shader
+Environment Sampling"]
+	CH [label="Closest Hit Shader
+Surface Interaction"]
+	subgraph cluster_shading {
+		label="Modular Shading System (HLSL)" style=dashed
+		Common [label="common.hlsl
+Buffers & Bindings"]
+		RNG [label="rng.hlsl
+Random Sampling"]
+		BRDF [label="brdf.hlsl
+Material Evaluation"]
+		Sampling [label="sampling.hlsl
+Importance Sampling"]
+		LightSampling [label="light_sampling.hlsl
+Light Sampling"]
+		Shadow [label="shadow.hlsl
+Shadow Rays"]
+		Direct [label="direct_lighting.hlsl
+NEE + MIS"]
+	}
+	Accum [label="Accumulation & Output
+Tone Mapping"]
+	CPU -> RayGen
+	RayGen -> Trace
+	Trace -> CH [label=Hit]
+	Trace -> Miss [label=Miss]
+	Miss -> Accum
+	CH -> Direct
+	Direct -> Shadow
+	Direct -> BRDF
+	BRDF -> Sampling
+	Sampling -> RNG
+	LightSampling -> Direct
+	Common -> BRDF
+	Common -> Direct
+	CH -> RayGen
+	RayGen -> Accum
+}

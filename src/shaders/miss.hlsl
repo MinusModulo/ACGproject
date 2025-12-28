@@ -17,6 +17,8 @@ float2 DirectionToEquirectangularUV(float3 direction) {
   float3 sky_color = (sky_info.use_skybox != 0)
     ? SkyboxTexture.SampleLevel(LinearWrap, uv, 0).rgb
     : float3(0.0, 0.0, 0.0);
-  payload.emission = sky_color;
+
+  // env_intensity scales environment lighting; bg_intensity can be used later for background-only
+  payload.emission = sky_color * sky_info.env_intensity;
 }
 

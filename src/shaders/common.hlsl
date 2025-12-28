@@ -96,12 +96,15 @@ struct VolumeRegion {
 
 struct SkyInfo {
   int use_skybox;
-  float3 pad_sky;
+  float env_intensity;
+  float bg_intensity;
+  float pad_sky;
 };
 
 struct RenderSettings {
   int max_bounces;
-  float3 pad_render;
+  float exposure;
+  float2 pad_render;
 };
 
 struct Light {
