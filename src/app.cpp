@@ -50,10 +50,14 @@ void Application::ProcessInput() {
     
     // Ctrl+S to save accumulated output (only in inspection mode)
     static bool ctrl_s_was_pressed = false;
+    static bool ctrl_shift_s_was_pressed = false; // Ctrl+Shift+S saves tone-mapped output
     bool ctrl_pressed = (glfwGetKey(glfw_window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS || 
                         glfwGetKey(glfw_window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+    bool shift_pressed = (glfwGetKey(glfw_window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+                         glfwGetKey(glfw_window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
     bool s_pressed = (glfwGetKey(glfw_window, GLFW_KEY_S) == GLFW_PRESS);
     bool ctrl_s_pressed = ctrl_pressed && s_pressed;
+    bool ctrl_shift_s_pressed = ctrl_pressed && shift_pressed && s_pressed;
     
     if (ctrl_s_pressed && !ctrl_s_was_pressed && !camera_enabled_) {
         // Generate filename with timestamp
@@ -69,7 +73,23 @@ void Application::ProcessInput() {
         
         SaveAccumulatedOutput(filename.str());
     }
+
+    if (ctrl_shift_s_pressed && !ctrl_shift_s_was_pressed && !camera_enabled_) {
+        auto now = std::chrono::system_clock::now();
+        auto time_t = std::chrono::system_clock::to_time_t(now);
+        std::tm tm;
+        localtime_s(&tm, &time_t);
+
+        std::ostringstream filename;
+        filename << "screenshot_view_"
+                 << std::put_time(&tm, "%Y%m%d_%H%M%S")
+                 << ".png";
+
+        SaveToneMappedOutput(filename.str());
+    }
+
     ctrl_s_was_pressed = ctrl_s_pressed;
+    ctrl_shift_s_was_pressed = ctrl_shift_s_pressed;
     
     // Only process camera movement if camera is enabled
     if (!camera_enabled_) {
@@ -256,7 +276,8 @@ void Application::OnInit() {
     {
         Light sunLight{};
         sunLight.type = LIGHT_SUN;
-        sunLight.color = glm::vec3(1.0f, 0.93f, 0.83f);          // Warm peach tone
+        //FFD5B3
+        sunLight.color = glm::vec3(1.0f, 0.83f, 0.7f);       // Warm peach tone
         sunLight.intensity = 200.0f;                            // Blender Strength
         // Blender Angle is a full cone angle; our angular_radius is half-angle in radians
         sunLight.angular_radius = glm::radians(2.5f);           // 5° / 2
@@ -594,6 +615,12 @@ void Application::OnInit() {
     sky_info.use_skybox = skybox_enabled ? 1 : 0;
     sky_info_buffer_->UploadData(&sky_info, sizeof(SkyInfo));
 
+    // Render settings buffer (max bounces, etc.)
+    core_->CreateBuffer(sizeof(RenderSettings), grassland::graphics::BUFFER_TYPE_DYNAMIC, &render_settings_buffer_);
+    RenderSettings render_settings{};
+    render_settings.max_bounces = 8; // sensible default
+    render_settings_buffer_->UploadData(&render_settings, sizeof(RenderSettings));
+
     // Initialize camera state member variables
     camera_pos_ = glm::vec3{ 0.0f, 1.0f, 5.0f };
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
@@ -662,6 +689,7 @@ void Application::OnInit() {
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, 1);                   // space16 - skybox texture
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space17 - volume info
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space18 - sky info
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space19 - render settings
     program_->Finalize();
 }
 
@@ -684,6 +712,20 @@ void Application::OnClose() {
     // Don't call TerminateImGui - let the window destructor handle it
     // Just reset window which will clean everything up properly
     window_.reset();
+}
+
+void Application::RecreateRenderTargets(int width, int height) {
+    // Resize film and recreate color/entity targets for offline export
+    if (film_) {
+        film_->Resize(width, height);
+    } else {
+        film_ = std::make_unique<Film>(core_.get(), width, height);
+    }
+
+    core_->CreateImage(width, height, grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT,
+        &color_image_);
+    core_->CreateImage(width, height, grassland::graphics::IMAGE_FORMAT_R32_SINT,
+        &entity_id_image_);
 }
 
 void Application::UpdateHoveredEntity() {
@@ -855,6 +897,41 @@ void Application::SaveAccumulatedOutput(const std::string& filename) {
         // Get absolute path for logging
         std::filesystem::path abs_path = std::filesystem::absolute(filename);
         grassland::LogInfo("Screenshot saved: {} ({}x{}, {} samples)", 
+                          abs_path.string(), width, height, sample_count);
+    } else {
+        grassland::LogError("Failed to save screenshot: {}", filename);
+    }
+}
+
+void Application::SaveToneMappedOutput(const std::string& filename) {
+    // Save the tone-mapped output image (matches on-screen look in inspection mode)
+    int width = window_->GetWidth();
+    int height = window_->GetHeight();
+    int sample_count = film_->GetSampleCount();
+
+    if (sample_count == 0) {
+        grassland::LogWarning("Cannot save screenshot: no samples accumulated yet");
+        return;
+    }
+
+    // Download the already tone-mapped image from Film
+    std::vector<float> output_colors(width * height * 4);
+    film_->GetOutputImage()->DownloadData(output_colors.data());
+
+    // Convert to 8-bit sRGB-like PNG (assumes Film output already tone-mapped/gamma-ready)
+    std::vector<uint8_t> byte_data(width * height * 4);
+    for (size_t i = 0; i < width * height; i++) {
+        byte_data[i * 4 + 0] = static_cast<uint8_t>(std::max(0.0f, std::min(1.0f, output_colors[i * 4 + 0])) * 255.0f);
+        byte_data[i * 4 + 1] = static_cast<uint8_t>(std::max(0.0f, std::min(1.0f, output_colors[i * 4 + 1])) * 255.0f);
+        byte_data[i * 4 + 2] = static_cast<uint8_t>(std::max(0.0f, std::min(1.0f, output_colors[i * 4 + 2])) * 255.0f);
+        byte_data[i * 4 + 3] = 255;
+    }
+
+    int result = stbi_write_png(filename.c_str(), width, height, 4, byte_data.data(), width * 4);
+
+    if (result) {
+        std::filesystem::path abs_path = std::filesystem::absolute(filename);
+        grassland::LogInfo("Screenshot (tone-mapped) saved: {} ({}x{}, {} samples)",
                           abs_path.string(), width, height, sample_count);
     } else {
         grassland::LogError("Failed to save screenshot: {}", filename);
@@ -1144,6 +1221,7 @@ void Application::OnRender() {
     command_context->CmdBindResources(16, { scene_->GetSkyboxTexture() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(17, { volume_info_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(18, { sky_info_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(19, { render_settings_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdDispatchRays(window_->GetWidth(), window_->GetHeight(), 1);
 
     // When camera is disabled, increment sample count and use accumulated image
@@ -1167,4 +1245,104 @@ void Application::OnRender() {
     
     command_context->CmdPresent(window_.get(), display_image);
     core_->SubmitCommandContext(command_context.get());
+}
+
+void Application::ExportFrame(const std::string& filename,
+                     const glm::vec3& cam_pos,
+                     const glm::vec3& cam_target,
+                     const glm::vec3& cam_up,
+                     float fov_deg,
+                     int width,
+                     int height,
+                     int max_bounces,
+                     int samples) {
+    // Preserve current interactive state to restore after export
+    int prev_width = window_ ? window_->GetWidth() : width;
+    int prev_height = window_ ? window_->GetHeight() : height;
+    glm::vec3 prev_pos = camera_pos_;
+    glm::vec3 prev_front = camera_front_;
+    glm::vec3 prev_up = camera_up_;
+    bool prev_camera_enabled = camera_enabled_;
+
+    // Clamp inputs
+    width = std::max(1, width);
+    height = std::max(1, height);
+    max_bounces = std::max(1, max_bounces);
+    samples = std::max(1, samples);
+
+    // Update camera state
+    camera_enabled_ = false;
+    camera_pos_ = cam_pos;
+    camera_up_ = glm::normalize(cam_up);
+    camera_front_ = glm::normalize(cam_target - cam_pos);
+
+    // Update camera buffer
+    CameraObject camera_object{};
+    camera_object.screen_to_camera = glm::inverse(
+        glm::perspective(glm::radians(fov_deg), (float)width / (float)height, 0.1f, 10.0f));
+    camera_object.camera_to_world =
+        glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
+    camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
+
+    // Update render settings
+    RenderSettings render_settings{};
+    render_settings.max_bounces = max_bounces;
+    render_settings_buffer_->UploadData(&render_settings, sizeof(RenderSettings));
+
+    // Resize render targets to requested resolution
+    RecreateRenderTargets(width, height);
+
+    // Reset accumulation
+    film_->Reset();
+
+    for (int i = 0; i < samples; ++i) {
+        std::unique_ptr<grassland::graphics::CommandContext> command_context;
+        core_->CreateCommandContext(&command_context);
+        command_context->CmdClearImage(color_image_.get(), { {0.0f, 0.0f, 0.0f, 1.0f} });
+        command_context->CmdClearImage(entity_id_image_.get(), { {-1, 0, 0, 0} });
+
+        command_context->CmdBindRayTracingProgram(program_.get());
+        command_context->CmdBindResources(0, scene_->GetTLAS(), grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(1, { color_image_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(2, { camera_object_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(3, { scene_->GetMaterialsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(4, { hover_info_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(5, { entity_id_image_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(6, { film_->GetAccumulatedColorImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(7, { film_->GetAccumulatedSamplesImage() }, grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(8, scene_->GetVertexBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(9, scene_->GetIndexBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(10, scene_->GetTexcoordBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(11, scene_->GetBaseColorTextureSRVs(), grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(12, { scene_->GetLinearWrapSampler() }, grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(13, scene_->GetNormalBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(14, scene_->GetTangentBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(15, { scene_->GetLightsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(16, { scene_->GetSkyboxTexture() }, grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(17, { volume_info_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(18, { sky_info_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdBindResources(19, { render_settings_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
+        command_context->CmdDispatchRays(width, height, 1);
+
+        core_->SubmitCommandContext(command_context.get());
+
+        film_->IncrementSampleCount();
+        film_->DevelopToOutput();
+    }
+
+    SaveAccumulatedOutput(filename);
+
+    // Restore render targets and camera for interactive mode
+    RecreateRenderTargets(prev_width, prev_height);
+    camera_pos_ = prev_pos;
+    camera_front_ = prev_front;
+    camera_up_ = prev_up;
+    camera_enabled_ = prev_camera_enabled;
+
+    CameraObject prev_camera{};
+    prev_camera.screen_to_camera = glm::inverse(
+        glm::perspective(glm::radians(60.0f), (float)prev_width / (float)prev_height, 0.1f, 10.0f));
+    prev_camera.camera_to_world =
+        glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
+    camera_object_buffer_->UploadData(&prev_camera, sizeof(CameraObject));
 }

@@ -99,6 +99,11 @@ struct SkyInfo {
   float3 pad_sky;
 };
 
+struct RenderSettings {
+  int max_bounces;
+  float3 pad_render;
+};
+
 struct Light {
   int type;
   float3 color;
@@ -200,6 +205,7 @@ StructuredBuffer<Light> Lights : register(t0, space15);
 Texture2D<float4> SkyboxTexture : register(t0, space16);
 ConstantBuffer<VolumeRegion> volume_info : register(b0, space17);
 ConstantBuffer<SkyInfo> sky_info : register(b0, space18);
+ConstantBuffer<RenderSettings> render_settings : register(b0, space19);
 
 #endif // COMMON_HLSL
 

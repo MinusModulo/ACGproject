@@ -23,6 +23,11 @@ struct SkyInfo {
     float pad_sky[3];
 };
 
+struct RenderSettings {
+    int max_bounces;
+    float padding[3];
+};
+
 class Application {
 public:
     Application(grassland::graphics::BackendAPI api = grassland::graphics::BACKEND_API_DEFAULT);
@@ -33,6 +38,15 @@ public:
     void OnClose();
     void OnUpdate();
     void OnRender();
+    void ExportFrame(const std::string& filename,
+                     const glm::vec3& cam_pos,
+                     const glm::vec3& cam_target,
+                     const glm::vec3& cam_up,
+                     float fov_deg,
+                     int width,
+                     int height,
+                     int max_bounces,
+                     int samples);
     void UpdateHoveredEntity(); // Update which entity the mouse is hovering over
     void RenderEntityPanel(); // Render entity inspector panel on the right
 
@@ -62,6 +76,7 @@ private:
     std::unique_ptr<grassland::graphics::Buffer> hover_info_buffer_;
     std::unique_ptr<grassland::graphics::Buffer> volume_info_buffer_;
     std::unique_ptr<grassland::graphics::Buffer> sky_info_buffer_;
+    std::unique_ptr<grassland::graphics::Buffer> render_settings_buffer_;
 
     // Shaders
     std::unique_ptr<grassland::graphics::Shader> raygen_shader_;
@@ -73,6 +88,8 @@ private:
     std::unique_ptr<grassland::graphics::Image> entity_id_image_; // Entity ID buffer for accurate picking
     std::unique_ptr<grassland::graphics::RayTracingProgram> program_;
     bool alive_{ false };
+
+    void RecreateRenderTargets(int width, int height);
 
     void ProcessInput(); // Helper function for keyboard input
 
@@ -88,6 +105,7 @@ private:
     void RenderInfoOverlay(); // Render the info overlay
     void ApplyHoverHighlight(grassland::graphics::Image* image); // Apply hover highlighting as post-process
     void SaveAccumulatedOutput(const std::string& filename); // Save accumulated output to PNG file
+    void SaveToneMappedOutput(const std::string& filename); // Save tone-mapped (on-screen) output
 
     float yaw_;
     float pitch_;

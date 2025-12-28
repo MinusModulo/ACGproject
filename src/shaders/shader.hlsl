@@ -70,8 +70,9 @@ float3 ACESFilm(float3 x) {
   // core of path tracing
 
   int depth = 0;
+  int max_depth = max(render_settings.max_bounces, 1);
   
-  while (true) { // infinite loop, we use RR to break :)
+  while (depth < max_depth) {
 
     // we trace a ray
     payload.hit = false;
