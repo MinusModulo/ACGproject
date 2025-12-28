@@ -18,6 +18,14 @@ float3 sample_cosine_hemisphere(float u1, float u2) {
   return float3(x, y, z);
 }
 
+// sample uniform sphere direction
+float3 sample_uniform_sphere(float u1, float u2) {
+  float z = 1.0 - 2.0 * u1;
+  float r = sqrt(max(0.0, 1.0 - z * z));
+  float phi = 2.0 * PI * u2;
+  return float3(r * cos(phi), r * sin(phi), z);
+}
+
 // sample GGX microfacet half-vector in tangent space
 float3 sample_GGX_half(float u1, float u2, float roughness) {
   // using common mapping: sample theta via tan^2(theta) = a^2 * u1/(1-u1)

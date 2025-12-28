@@ -11,6 +11,7 @@
 #include "light_sampling.hlsl"
 #include "shadow.hlsl"
 #include "direct_lighting.hlsl"
+#include "volume.hlsl"
 
 bool dead() {
   int i = 2;
@@ -83,6 +84,33 @@ float3 ACESFilm(float3 x) {
     if (depth == 0) {
       entity_id_output[pixel_coords] = payload.hit ? (int)payload.instance_id : -1;
     }
+
+    // ========================================================================
+    // Homogeneous Volume Rendering (Restricted to Bounding Box)
+    // ========================================================================
+    // VolumeRegion vol;
+    // // Define a bounding box around the area light (approx pos: 2.4, 1.2, 1.0)
+    // vol.min_p = float3(1.4, 0.2, 0.0);
+    // vol.max_p = float3(3.4, 2.2, 2.0);
+    // vol.sigma_t = 0.2; // Density
+    // vol.sigma_s = float3(0.2, 0.2, 0.2); // Scattering albedo (white fog)
+
+    float hit_dist = payload.hit ? distance(ray.Origin, payload.position) : 1e10;
+    
+    VolumeRegion vol;
+    vol.min_p = volume_info.min_p;
+    vol.max_p = volume_info.max_p;
+    vol.sigma_t = volume_info.sigma_t;
+    vol.sigma_s = volume_info.sigma_s;
+    vol.pad0 = 0;
+    vol.pad1 = 0;
+
+    if (SampleHomogeneousVolume(ray, throughput, rng_state, vol, hit_dist)) {
+        depth++;
+        payload.rng_state = rng_state;
+        continue;
+    }
+    // ========================================================================
 
     // if not hit, accumulate sky color and break
     if (!payload.hit) {

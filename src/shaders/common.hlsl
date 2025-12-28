@@ -85,6 +85,15 @@ struct HoverInfo {
   int light_count;
 };
 
+struct VolumeRegion {
+    float3 min_p;
+    float pad0;
+    float3 max_p;
+    float sigma_t;
+    float3 sigma_s;
+    float pad1;
+};
+
 struct Light {
   int type;
   float3 color;
@@ -183,6 +192,7 @@ StructuredBuffer<float3> Normals[] : register(t0, space13);
 StructuredBuffer<float3> Tangents[] : register(t0, space14);
 StructuredBuffer<Light> Lights : register(t0, space15);
 Texture2D<float4> SkyboxTexture : register(t0, space16);
+ConstantBuffer<VolumeRegion> volume_info : register(b0, space17);
 
 #endif // COMMON_HLSL
 

@@ -9,6 +9,15 @@ struct CameraObject {
     glm::mat4 camera_to_world;
 };
 
+struct VolumeRegion {
+    glm::vec3 min_p;
+    float pad0;
+    glm::vec3 max_p;
+    float sigma_t;
+    glm::vec3 sigma_s;
+    float pad1;
+};
+
 class Application {
 public:
     Application(grassland::graphics::BackendAPI api = grassland::graphics::BACKEND_API_DEFAULT);
@@ -46,6 +55,7 @@ private:
         int light_count;
     };
     std::unique_ptr<grassland::graphics::Buffer> hover_info_buffer_;
+    std::unique_ptr<grassland::graphics::Buffer> volume_info_buffer_;
 
     // Shaders
     std::unique_ptr<grassland::graphics::Shader> raygen_shader_;

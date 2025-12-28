@@ -544,6 +544,15 @@ void Application::OnInit() {
     initial_hover.light_count = static_cast<int>(scene_->GetLightCount());
     hover_info_buffer_->UploadData(&initial_hover, sizeof(HoverInfo));
 
+    // Create volume info buffer
+    core_->CreateBuffer(sizeof(VolumeRegion), grassland::graphics::BUFFER_TYPE_DYNAMIC, &volume_info_buffer_);
+    VolumeRegion initial_volume{};
+    initial_volume.min_p = glm::vec3(2.3f, 1.1f, 1.1f);
+    initial_volume.max_p = glm::vec3(2.4f, 1.2f, 1.2f);
+    initial_volume.sigma_t = 0.6f;
+    initial_volume.sigma_s = glm::vec3(0.2f, 0.2f, 0.2f);
+    volume_info_buffer_->UploadData(&initial_volume, sizeof(VolumeRegion));
+
     // Initialize camera state member variables
     camera_pos_ = glm::vec3{ 0.0f, 1.0f, 5.0f };
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
@@ -610,6 +619,7 @@ void Application::OnInit() {
                                                              scene_->GetEntityCount());          // space14 - tangent buffers
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_STORAGE_BUFFER, 1);          // space15 - lights buffer
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_IMAGE, 1);                   // space16 - skybox texture
+    program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space17 - volume info
     program_->Finalize();
 }
 
@@ -627,6 +637,7 @@ void Application::OnClose() {
     entity_id_image_.reset();
     camera_object_buffer_.reset();
     hover_info_buffer_.reset();
+    volume_info_buffer_.reset();
     
     // Don't call TerminateImGui - let the window destructor handle it
     // Just reset window which will clean everything up properly
@@ -1089,6 +1100,7 @@ void Application::OnRender() {
     command_context->CmdBindResources(14, scene_->GetTangentBuffers(), grassland::graphics::BIND_POINT_RAYTRACING);
 	command_context->CmdBindResources(15, { scene_->GetLightsBuffer() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdBindResources(16, { scene_->GetSkyboxTexture() }, grassland::graphics::BIND_POINT_RAYTRACING);
+    command_context->CmdBindResources(17, { volume_info_buffer_.get() }, grassland::graphics::BIND_POINT_RAYTRACING);
     command_context->CmdDispatchRays(window_->GetWidth(), window_->GetHeight(), 1);
 
     // When camera is disabled, increment sample count and use accumulated image
