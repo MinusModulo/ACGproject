@@ -131,6 +131,7 @@ struct RayPayload {
 
   float3 position;
   float3 normal;
+  float3 geometric_normal;
 
   float3 albedo;
 

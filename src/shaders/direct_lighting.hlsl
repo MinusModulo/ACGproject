@@ -56,7 +56,7 @@ float mis_weight_power_safe(float pdf_a, float pdf_b, float beta = 2.0) {
 // Direct Lighting with MIS (Light + BRDF Sampling)
 // ============================================================================
 
-float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_dir, float3 albedo, float roughness, float metallic, float ao, float clearcoat, float clearcoat_roughness, inout uint rng_state) {
+float3 EvaluateLight(Light light, float3 position, float3 normal, float3 geometric_normal, float3 view_dir, float3 albedo, float roughness, float metallic, float ao, float clearcoat, float clearcoat_roughness, inout uint rng_state) {
   float3 direct_light = float3(0.0, 0.0, 0.0);
   
   // ========================================================================
@@ -117,14 +117,14 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_di
     
     float safe_roughness = max(roughness, min_roughness);
     float3 brdf_light = eval_brdf(normal, light_dir, view_dir, albedo, safe_roughness, metallic, ao, clearcoat, clearcoat_roughness);
-    if (!CastShadowRay(position + normal * 1e-3, light_dir, max_distance - 1e-3)) {
+    if (!CastShadowRay(position + geometric_normal * 1e-3, light_dir, max_distance - 1e-3)) {
       contribution_light = brdf_light * radiance_light * NdotL_light;
       
       // ========================================================================
       // Firefly Reduction: Contribution Clamping (Scheme 3)
       // ========================================================================
       // Clamp contribution to prevent fireflies (safety net)
-      float max_contribution = 20.0; // Adjust based on scene
+      float max_contribution = 1e5; // Relaxed clamping
       contribution_light = min(contribution_light, float3(max_contribution, max_contribution, max_contribution));
       
       light_sample_valid = true;
@@ -233,7 +233,7 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_di
         light_radiance_brdf = light.color * light.intensity;
       }
       
-      if (!CastShadowRay(position + normal * 1e-3, brdf_dir, dist_to_light - 1e-3)) {
+      if (!CastShadowRay(position + geometric_normal * 1e-3, brdf_dir, dist_to_light - 1e-3)) {
         float safe_roughness = max(roughness, 0.15);
         float3 brdf_brdf = eval_brdf(normal, brdf_dir, view_dir, albedo, safe_roughness, metallic, ao, clearcoat, clearcoat_roughness);
         contribution_brdf = brdf_brdf * light_radiance_brdf * NdotL_brdf;
@@ -241,7 +241,7 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 view_di
         // ========================================================================
         // Firefly Reduction: Contribution Clamping (Scheme 3)
         // ========================================================================
-        float max_contribution = 20.0; // Adjust based on scene
+        float max_contribution = 1e5; // Relaxed clamping
         contribution_brdf = min(contribution_brdf, float3(max_contribution, max_contribution, max_contribution));
         
         pdf_brdf = pdf_brdf_for_direction(normal, view_dir, brdf_dir, roughness, metallic, clearcoat, clearcoat_roughness);
@@ -296,7 +296,7 @@ float pdf_brdf_multi_layer_for_direction(
 }
 
 float3 EvaluateLightMultiLayer(
-    Light light, float3 position, float3 normal, float3 view_dir,
+    Light light, float3 position, float3 normal, float3 geometric_normal, float3 view_dir,
     // Layer 1 properties
     float3 albedo_layer1, float roughness_layer1, float metallic_layer1,
     float ao_layer1, float clearcoat_layer1, float clearcoat_roughness_layer1,
@@ -373,13 +373,13 @@ float3 EvaluateLightMultiLayer(
             alpha_layer2
         );
         
-        if (!CastShadowRay(position + normal * 1e-3, light_dir, max_distance - 1e-3)) {
+        if (!CastShadowRay(position + geometric_normal * 1e-3, light_dir, max_distance - 1e-3)) {
             contribution_light = brdf_light * radiance_light * NdotL_light;
             
             // ========================================================================
             // Firefly Reduction: Contribution Clamping (Scheme 3)
             // ========================================================================
-            float max_contribution = 20.0; // Adjust based on scene
+            float max_contribution = 1e5; // Relaxed clamping
             contribution_light = min(contribution_light, float3(max_contribution, max_contribution, max_contribution));
             
             light_sample_valid = true;
@@ -474,7 +474,7 @@ float3 EvaluateLightMultiLayer(
               light_radiance_brdf = light.color * light.intensity;
             }
             
-            if (!CastShadowRay(position + normal * 1e-3, brdf_dir, dist_to_light - 1e-3)) {
+            if (!CastShadowRay(position + geometric_normal * 1e-3, brdf_dir, dist_to_light - 1e-3)) {
                 float safe_roughness_layer1 = max(roughness_layer1, 0.15);
                 float safe_roughness_layer2 = max(roughness_layer2, 0.15);
                 
@@ -493,7 +493,7 @@ float3 EvaluateLightMultiLayer(
                 // ========================================================================
                 // Firefly Reduction: Contribution Clamping (Scheme 3)
                 // ========================================================================
-                float max_contribution = 20.0; // Adjust based on scene
+                float max_contribution = 1e5; // Relaxed clamping
                 contribution_brdf = min(contribution_brdf, float3(max_contribution, max_contribution, max_contribution));
                 
                 pdf_brdf = pdf_brdf_multi_layer_for_direction(normal, view_dir, brdf_dir, roughness_layer1, metallic_layer1, clearcoat_layer1, clearcoat_roughness_layer1);

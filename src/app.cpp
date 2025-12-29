@@ -260,6 +260,7 @@ void Application::OnInit() {
     */
 
  // Temporary: disable all existing lights
+ /*
     Light areaLight{};
     areaLight.type = LIGHT_AREA; // Area light
     areaLight.color = glm::vec3(1.0f, 0.75f, 0.3f);
@@ -270,8 +271,8 @@ void Application::OnInit() {
     areaLight.u = glm::vec3(2.0f, 0.0f, 0.0f); // Width vector
     areaLight.v = glm::vec3(0.0f, 0.0f, 2.0f); // Height vector
     scene_->AddLight(areaLight);
+*/
 
-/*
     // Simple sunlight (directional)
     {
         Light sunLight{};
@@ -279,7 +280,7 @@ void Application::OnInit() {
         //FFD5B3
         sunLight.color = glm::vec3(1.0f, 0.83f, 0.7f);       // Warm peach tone
         // Use a higher, more physical-scale strength so indirect bounces carry visible color
-        sunLight.intensity = 700.0f;                          // Blender-ish sun order of magnitude
+        sunLight.intensity = 7000.0f;                          // Blender-ish sun order of magnitude
         // Blender Angle is a full cone angle; our angular_radius is half-angle in radians
         sunLight.angular_radius = glm::radians(2.5f);           // 5° / 2
         // Direction: Blender sun aims along -Z after XYZ Euler (77.202°, -35°, 91.118°)
@@ -287,7 +288,7 @@ void Application::OnInit() {
         sunLight.direction = glm::normalize(glm::vec3(-0.9782f,  -0.1818f, -0.1059f));
         scene_->AddLight(sunLight);
     }
-        */
+        
     /*
     // Add glass sphere around the area light
     Material glassMaterial;
@@ -530,7 +531,7 @@ void Application::OnInit() {
   // Temporary: disable HDRI/skybox lighting
     // Load Skybox Texture
     {
-        std::string skybox_path = "sunset.hdr";
+        std::string skybox_path = "sunset.hdr";                            
         // Try to find it
         std::string full_path = skybox_path;
         std::ifstream test_file(full_path, std::ios::binary);
@@ -547,6 +548,62 @@ void Application::OnInit() {
             int w, h, comp;
             float* data = stbi_loadf(full_path.c_str(), &w, &h, &comp, 4);
             if (data) {
+                // Calculate and log HDR/Sunlight ratio
+                float sun_radiance = 1.0f; 
+                float sun_solid_angle = 0.0f;
+                bool sun_found = false;
+                for (const auto& light : scene_->GetLights()) {
+                    if (light.type == LIGHT_SUN) {
+                        sun_radiance = light.intensity;
+                        float angular_radius = std::max(light.angular_radius, 1e-4f);
+                        sun_solid_angle = 2.0f * 3.14159265359f * (1.0f - std::cos(angular_radius));
+                        sun_found = true;
+                        break;
+                    }
+                }
+
+                if (!sun_found) {
+                    grassland::LogWarning("No Sun Light found. Using default intensity 1.0 and small solid angle.");
+                    float angular_radius = 1e-4f;
+                    sun_solid_angle = 2.0f * 3.14159265359f * (1.0f - std::cos(angular_radius));
+                }
+
+                float sun_irradiance = sun_radiance * sun_solid_angle;
+
+                double total_sky_irradiance = 0.0;
+                float max_intensity = 0.0f;
+                glm::vec2 max_pos = glm::vec2(0.0f);
+                
+                for (int y = 0; y < h; ++y) {
+                    float theta = (y + 0.5f) / h * 3.14159265359f; 
+                    if (theta > 3.14159265359f / 2.0f) continue;
+
+                    float sin_theta = std::sin(theta);
+                    float cos_theta = std::cos(theta);
+                    float delta_omega = (2.0f * 3.14159265359f / w) * (3.14159265359f / h) * sin_theta;
+                    
+                    for (int x = 0; x < w; ++x) {
+                        int idx = (y * w + x) * 4;
+                        float r = data[idx];
+                        float g = data[idx + 1];
+                        float b = data[idx + 2];
+                        float luminance = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+                        
+                        if (luminance > max_intensity) {
+                            max_intensity = luminance;
+                            max_pos = glm::vec2(x, y);
+                        }
+
+                        total_sky_irradiance += luminance * cos_theta * delta_omega;
+                    }
+                }
+                
+                grassland::LogInfo("HDR Analysis for {}", full_path);
+                grassland::LogInfo("Sun Radiance: {}, Solid Angle: {}, Irradiance: {}", sun_radiance, sun_solid_angle, sun_irradiance);
+                grassland::LogInfo("Sky Irradiance (Upper Hemisphere): {}", total_sky_irradiance);
+                grassland::LogInfo("Sky / Sun Irradiance Ratio: {}", total_sky_irradiance / sun_irradiance);
+                grassland::LogInfo("Max HDR Intensity: {} at ({}, {})", max_intensity, max_pos.x, max_pos.y);
+
                 std::unique_ptr<grassland::graphics::Image> skybox_tex;
                 core_->CreateImage(w, h, grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT, &skybox_tex);
                 skybox_tex->UploadData(data);

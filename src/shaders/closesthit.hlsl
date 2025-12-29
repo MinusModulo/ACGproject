@@ -117,10 +117,12 @@
   }
 
   float3 world_normal = normalize(mul(ObjectToWorld3x4(), float4(normal, 0.0)));
+  float3 geometric_normal = world_normal;
 
   payload.front_face = true;
   if (dot(world_normal, WorldRayDirection()) > 0.0) {
     world_normal = -world_normal;
+    geometric_normal = -geometric_normal;
     payload.front_face = false;
   }
 
@@ -145,6 +147,7 @@
 
   payload.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
   payload.normal = world_normal;
+  payload.geometric_normal = geometric_normal;
 
   payload.albedo = base_color;
 
@@ -199,7 +202,7 @@
     for (uint i = 0; i < hover_info.light_count; ++i) {
       Light light = Lights[i];
       payload.direct_light += EvaluateLightMultiLayer(
-        light, payload.position, payload.normal, view_dir,
+        light, payload.position, payload.normal, payload.geometric_normal, view_dir,
         payload.albedo, payload.roughness, payload.metallic,
         payload.ao, payload.clearcoat, payload.clearcoat_roughness,
         payload.albedo_layer2, payload.roughness_layer2, payload.metallic_layer2,
@@ -213,8 +216,14 @@
     // Use single-layer material BRDF (backward compatible)
     for (uint i = 0; i < hover_info.light_count; ++i) {
       Light light = Lights[i];
-      payload.direct_light += EvaluateLight(light, payload.position, payload.normal, view_dir, payload.albedo, payload.roughness, payload.metallic, payload.ao, payload.clearcoat, payload.clearcoat_roughness, payload.rng_state);
-    }
+      payload.direct_light += EvaluateLight(
+        light, payload.position, payload.normal, payload.geometric_normal, view_dir,
+        payload.albedo, payload.roughness, payload.metallic,
+        payload.ao, payload.clearcoat, payload.clearcoat_roughness,
+        payload.rng_state
+      );
+    
   }
+}
 }
 

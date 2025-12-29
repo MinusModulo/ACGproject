@@ -329,7 +329,9 @@ float3 ACESFilm(float3 x) {
     throughput *= brdf * cos_theta / max(eps, pdf_total);
 
     // update ray for next bounce
-    ray.Origin = payload.position + next_dir * payload.new_eps;  // offset a bit to avoid self-intersection!!!!
+    // Use geometric normal for offset to prevent self-intersection with normal maps
+    float3 offset_dir = dot(next_dir, payload.geometric_normal) > 0 ? payload.geometric_normal : -payload.geometric_normal;
+    ray.Origin = payload.position + offset_dir * 1e-4;
     ray.Direction = next_dir;
 
     // ========================================================================
@@ -341,7 +343,7 @@ float3 ACESFilm(float3 x) {
     p = clamp(p, 0.10, 0.99);
     
     // Force termination if throughput is too large (prevents fireflies)
-    if (any(throughput > float3(30.0, 30.0, 30.0))) {
+    if (any(throughput > float3(1e5, 1e5, 1e5))) {
       break; // Force termination to prevent firefly
     }
     
