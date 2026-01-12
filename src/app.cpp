@@ -271,7 +271,7 @@ void Application::OnInit() {
     areaLight.v = glm::vec3(0.0f, 0.0f, 2.0f); // Height vector
     scene_->AddLight(areaLight);
 
-/*
+// /*
     // Simple sunlight (directional)
     {
         Light sunLight{};
@@ -287,7 +287,7 @@ void Application::OnInit() {
         sunLight.direction = glm::normalize(glm::vec3(-0.9782f,  -0.1818f, -0.1059f));
         scene_->AddLight(sunLight);
     }
-        */
+        // */
     /*
     // Add glass sphere around the area light
     Material glassMaterial;
