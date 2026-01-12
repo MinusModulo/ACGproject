@@ -75,6 +75,14 @@
   float alpha = mat.base_color_factor.a * alpha_tex;
   float metallic = mat.metallic_factor * metallic_roughness_tex;
   float roughness = max(0.1f, mat.roughness_factor * roughness_tex);
+  
+  // ============================================================================
+  // Anime Style: Apply roughness floor to weaken texture details
+  // ============================================================================
+  if (render_settings.cartoon_enabled == 1) {
+    roughness = max(roughness, render_settings.roughness_floor);
+  }
+  
   float3 emission = mat.emissive_factor * emissive_tex;
   float AO = 1.0 + (AO_tex - 1.0) * mat.AO_strength;
 
@@ -94,6 +102,14 @@
   float alpha_layer2 = mat.base_color_factor_layer2.a * alpha_tex_layer2;
   float metallic_layer2 = mat.metallic_factor_layer2 * metallic_roughness_tex_layer2;
   float roughness_layer2 = max(0.1f, mat.roughness_factor_layer2 * roughness_tex_layer2);
+  
+  // ============================================================================
+  // Anime Style: Apply roughness floor to Layer 2 to weaken texture details
+  // ============================================================================
+  if (render_settings.cartoon_enabled == 1) {
+    roughness_layer2 = max(roughness_layer2, render_settings.roughness_floor);
+  }
+  
   float3 emission_layer2 = mat.emissive_factor_layer2 * emissive_tex_layer2;
   float AO_layer2 = 1.0 + (AO_tex_layer2 - 1.0) * mat.AO_strength_layer2;
 
@@ -143,6 +159,15 @@
 
     // Transform normal from tangent space to world space
     world_normal = normalize(normal_map_sample.x * world_tangent + normal_map_sample.y * world_bitangent + normal_map_sample.z * world_normal);
+  }
+  
+  // ============================================================================
+  // Anime Style: Smooth normal to weaken texture details
+  // ============================================================================
+  if (render_settings.cartoon_enabled == 1 && render_settings.texture_smoothing > 0.0) {
+    // Smooth normal by blending with geometric normal
+    // Higher texture_smoothing = more smoothing (less texture detail)
+    world_normal = normalize(lerp(world_normal, geometric_normal, render_settings.texture_smoothing));
   }
 
   payload.position = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
@@ -194,6 +219,46 @@
   // Calculate direct lighting
   payload.direct_light = float3(0.0, 0.0, 0.0);
   float3 view_dir = -normalize(WorldRayDirection());
+  
+  // ============================================================================
+  // Cartoon Style: Outline Detection
+  // ============================================================================
+  // Detect edges by checking the angle between normal and view direction
+  // When the angle is close to 90 degrees (normal perpendicular to view),
+  // we have an edge that should be outlined
+  if (render_settings.cartoon_enabled == 1) {
+    float NdotV = abs(dot(payload.normal, view_dir));
+    // Edge factor: 1.0 when normal is perpendicular to view (edge), 0.0 when parallel
+    float edge_factor = 1.0 - NdotV;
+    
+    // Use more conservative threshold: only outline when edge_factor is very high
+    // This prevents outlining on normal surfaces
+    // Clamp threshold to reasonable range (0.7-0.95) to avoid over-outlining
+    float effective_threshold = clamp(render_settings.outline_threshold, 0.7, 0.95);
+    float effective_width = clamp(render_settings.outline_width, 0.01, 0.05);
+    
+    // Apply threshold and width to determine outline strength
+    // Only outline when edge_factor is very close to 1.0 (true edges)
+    float outline = smoothstep(effective_threshold - effective_width,
+                               effective_threshold + effective_width,
+                               edge_factor);
+    
+    // Further reduce outline strength to prevent over-outlining
+    payload.outline_factor = outline * 0.8; // Scale down by 20% to be more conservative
+  } else {
+    payload.outline_factor = 0.0;
+  }
+  
+  // ============================================================================
+  // Enhanced Color Effects: Rim Lighting Calculation
+  // ============================================================================
+  if (render_settings.cartoon_enabled == 1 && render_settings.rim_power > 0.0) {
+    float rim = 1.0 - abs(dot(payload.normal, view_dir));
+    float rim_intensity = pow(rim, 1.0 / max(render_settings.rim_power, 0.1));
+    payload.rim_factor = rim_intensity;
+  } else {
+    payload.rim_factor = 0.0;
+  }
   
   // Sample all lights
   // Check if multi-layer material (blend_factor > 0 means multi-layer is active)

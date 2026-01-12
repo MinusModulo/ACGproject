@@ -82,6 +82,14 @@ float3 ACESFilm(float3 x) {
   float3 throughput = float3(1.0, 1.0, 1.0);
   float3 radiance = float3(0.0, 0.0, 0.0);
   payload.rng_state = rng_state;
+  payload.outline_factor = 0.0; // Initialize outline factor
+  payload.rim_factor = 0.0; // Initialize rim factor
+  
+  // Store information from first hit for enhanced color effects
+  float first_hit_outline_factor = 0.0;
+  float first_hit_rim_factor = 0.0;
+  float3 first_hit_normal = float3(0.0, 0.0, 0.0);
+  float3 first_hit_position = float3(0.0, 0.0, 0.0);
 
   // core of path tracing
 
@@ -100,6 +108,16 @@ float3 ACESFilm(float3 x) {
     // record the id of this entity, if hit
     if (depth == 0) {
       entity_id_output[pixel_coords] = payload.hit ? (int)payload.instance_id : -1;
+      // Store information from first hit for enhanced color effects
+      if (payload.hit) {
+        first_hit_outline_factor = payload.outline_factor;
+        first_hit_rim_factor = payload.rim_factor;
+        first_hit_normal = payload.normal;
+        first_hit_position = payload.position;
+        first_hit_rim_factor = payload.rim_factor;
+        first_hit_normal = payload.normal;
+        first_hit_position = payload.position;
+      }
     }
 
     // ========================================================================
@@ -397,8 +415,103 @@ float3 ACESFilm(float3 x) {
   }
   // Write outputs
   // Apply exposure then ACES tone mapping, followed by gamma for display
-  float3 mapped_radiance = ACESFilm(radiance * render_settings.exposure);
+  float3 exposed_radiance = radiance * render_settings.exposure;
+  // 如果是卡通模式，给暗部补一点光 (0.1 的底色)
+  if (render_settings.cartoon_enabled == 1) {
+      exposed_radiance = max(exposed_radiance, 0.05); 
+  }
+  float3 mapped_radiance = ACESFilm(exposed_radiance);
   mapped_radiance = pow(mapped_radiance, 1.0 / 2.2);
+  
+  // ============================================================================
+  // Enhanced Color Effects: Apply all effects to final output
+  // ============================================================================
+  if (render_settings.cartoon_enabled == 1) {
+    // Apply gradient mapping if enabled
+    if (render_settings.use_gradient_mapping == 1) {
+      mapped_radiance = apply_gradient_mapping(mapped_radiance);
+    }
+    
+    // Apply hue shift - MORE AGGRESSIVE
+    if (render_settings.hue_shift_strength > 0.0) {
+      // Use normal-based hue shift for more interesting effect
+      // Make it more aggressive by using more variation
+      float normal_variation = (first_hit_normal.x * 0.3 + first_hit_normal.y * 0.5 + first_hit_normal.z * 0.2);
+      float hue_shift = render_settings.hue_shift_strength * (normal_variation * 0.5 + 0.5) * 0.3; // Scale to reasonable range
+      mapped_radiance = apply_hue_shift(mapped_radiance, hue_shift);
+    }
+    
+    // Apply normal-based coloring - MORE AGGRESSIVE
+    if (render_settings.normal_coloring_strength > 0.0) {
+      mapped_radiance = apply_normal_coloring(mapped_radiance, first_hit_normal, render_settings.normal_coloring_strength);
+      
+      // Add extra color variation based on normal direction
+      float3 normal_color_tint = float3(
+        0.8 + first_hit_normal.x * 0.2,
+        0.8 + first_hit_normal.y * 0.2,
+        0.8 + first_hit_normal.z * 0.2
+      );
+      mapped_radiance = lerp(mapped_radiance, mapped_radiance * normal_color_tint, render_settings.normal_coloring_strength * 0.5);
+    }
+    
+    // ============================================================================
+    // Color Bleeding Effects (插画风格藏色)
+    // ============================================================================
+    float luminance = dot(mapped_radiance, float3(0.2126, 0.7152, 0.0722));
+    
+    // Apply color temperature separation (色温分离)
+    if (render_settings.color_temperature_shift > 0.0) {
+      mapped_radiance = apply_color_temperature_separation(
+        mapped_radiance, 
+        luminance, 
+        render_settings.color_temperature_shift,
+        render_settings.shadow_tint,
+        render_settings.highlight_tint
+      );
+    }
+    
+    // Apply complementary color bleeding (互补色藏色)
+    if (render_settings.use_complementary_colors == 1 && render_settings.color_bleeding_strength > 0.0) {
+      mapped_radiance = apply_complementary_color_bleeding(
+        mapped_radiance,
+        luminance,
+        render_settings.color_bleeding_strength
+      );
+    }
+    
+    // Apply rim lighting - MORE AGGRESSIVE
+    if (render_settings.rim_power > 0.0 && first_hit_rim_factor > 0.0) {
+      float3 view_dir_first = -normalize(primary_dir);
+      float3 rim_light = calculate_rim_lighting(first_hit_normal, view_dir_first, render_settings.rim_power, render_settings.rim_color);
+      // Boost rim light intensity for more visible effect
+      mapped_radiance += rim_light * first_hit_rim_factor * 1.5;
+    }
+    
+    // Apply outline effect
+    if (first_hit_outline_factor > 0.0) {
+      float3 outline_color = float3(0.0, 0.0, 0.0);
+      mapped_radiance = lerp(mapped_radiance, outline_color, first_hit_outline_factor);
+    }
+    
+    // ============================================================================
+    // Anime Style Rendering: Ultra-high saturation and rainbow mapping
+    // ============================================================================
+    // Apply ultra-high saturation boost for vibrant anime colors
+    if (render_settings.anime_saturation_boost > 1.0) {
+      mapped_radiance = apply_anime_saturation(mapped_radiance, render_settings.anime_saturation_boost);
+    }
+    
+    // Apply rainbow mapping for colorful anime style
+    if (render_settings.use_rainbow_mapping == 1 && render_settings.anime_hue_variation > 0.0) {
+      mapped_radiance = apply_rainbow_mapping(
+        mapped_radiance, 
+        first_hit_position, 
+        first_hit_normal, 
+        render_settings.anime_hue_variation
+      );
+    }
+  }
+  
   output[pixel_coords] = float4(mapped_radiance, 1.0);
 
   accumulated_color[pixel_coords] = accumulated_color[pixel_coords] + float4(radiance, 1.0);

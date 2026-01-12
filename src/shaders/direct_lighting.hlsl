@@ -88,6 +88,10 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 geometr
   }
   
   float NdotL_light = max(dot(normal, light_dir), 0.0);
+  float NdotL_raw = dot(normal, light_dir);
+  float half_lambert = NdotL_raw * 0.5 + 0.5;
+  float toon_ramp = smoothstep(0.35, 0.4, half_lambert) * 0.4 + smoothstep(0.65, 0.7, half_lambert) * 0.6;
+  float toon_NdotL = toon_ramp * 0.9 + 0.1;
   if (NdotL_light > 0.0) {
     // ========================================================================
     // Firefly Reduction: Dynamic Roughness Clamping (Scheme 1)
@@ -118,7 +122,15 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 geometr
     float safe_roughness = max(roughness, min_roughness);
     float3 brdf_light = eval_brdf(normal, light_dir, view_dir, albedo, safe_roughness, metallic, ao, clearcoat, clearcoat_roughness);
     if (!CastShadowRay(position + geometric_normal * 1e-3, light_dir, max_distance - 1e-3)) {
-      contribution_light = brdf_light * radiance_light * NdotL_light;
+      if (render_settings.cartoon_enabled == 1) {
+        float albedo_lum = dot(albedo, float3(0.2126, 0.7152, 0.0722));
+        float3 cool_color = albedo_lum * float3(0.6, 0.6, 0.8) * 0.15;
+        float light_lum = dot(radiance_light, float3(0.2126, 0.7152, 0.0722));
+        float3 warm_color = brdf_light * light_lum;
+        contribution_light = lerp(cool_color, warm_color, toon_ramp);
+      } else {
+        contribution_light = brdf_light * radiance_light * NdotL_light;
+      }
       
       // ========================================================================
       // Firefly Reduction: Contribution Clamping (Scheme 3)
@@ -337,6 +349,10 @@ float3 EvaluateLightMultiLayer(
     }
     
     float NdotL_light = max(dot(normal, light_dir), 0.0);
+    float NdotL_raw = dot(normal, light_dir);
+    float half_lambert = NdotL_raw * 0.5 + 0.5;
+    float toon_ramp = smoothstep(0.35, 0.4, half_lambert) * 0.4 + smoothstep(0.65, 0.7, half_lambert) * 0.6;
+    float toon_NdotL = toon_ramp * 0.9 + 0.1;
     if (NdotL_light > 0.0) {
         // ========================================================================
         // Firefly Reduction: Dynamic Roughness Clamping (Scheme 1)
@@ -374,7 +390,15 @@ float3 EvaluateLightMultiLayer(
         );
         
         if (!CastShadowRay(position + geometric_normal * 1e-3, light_dir, max_distance - 1e-3)) {
-            contribution_light = brdf_light * radiance_light * NdotL_light;
+            if (render_settings.cartoon_enabled == 1) {
+              float albedo_lum = dot(albedo_layer1, float3(0.2126, 0.7152, 0.0722));
+              float3 cool_color = albedo_lum * float3(0.6, 0.6, 0.8) * 0.15;
+              float light_lum = dot(radiance_light, float3(0.2126, 0.7152, 0.0722));
+              float3 warm_color = brdf_light * light_lum;
+              contribution_light = lerp(cool_color, warm_color, toon_ramp);
+            } else {
+              contribution_light = brdf_light * radiance_light * NdotL_light;
+            }
             
             // ========================================================================
             // Firefly Reduction: Contribution Clamping (Scheme 3)
