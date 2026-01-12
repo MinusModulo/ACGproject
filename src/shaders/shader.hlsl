@@ -120,7 +120,16 @@ float3 ACESFilm(float3 x) {
     }
 
     radiance += throughput * payload.emission; // emissive term
-    radiance += throughput * payload.direct_light; // direct lighting
+    
+    // ========================================================================
+    // Firefly Reduction: Indirect Light Clamping
+    // ========================================================================
+    float3 bounce_light = payload.direct_light;
+    if (depth > 0) {
+        float indirect_clamp = 10.0;
+        bounce_light = min(bounce_light, float3(indirect_clamp, indirect_clamp, indirect_clamp));
+    }
+    radiance += throughput * bounce_light; // direct lighting
 
     // transmission
     if (payload.transmission > 0.0) {
@@ -224,6 +233,16 @@ float3 ACESFilm(float3 x) {
 
     // otherwise, let N be the normal
     float3 N = payload.normal;
+    
+    // ========================================================================
+    // Firefly Reduction: Roughness Floor (Filter Glossy)
+    // ========================================================================
+    // Apply roughness floor for indirect bounces to prevent singular spikes
+    float roughness_floor = (depth > 0) ? 0.1 : 0.0;
+    float eff_roughness = max(payload.roughness, roughness_floor);
+    float eff_clearcoat_roughness = max(payload.clearcoat_roughness, roughness_floor);
+    float eff_roughness_layer2 = max(payload.roughness_layer2, roughness_floor);
+    float eff_clearcoat_roughness_layer2 = max(payload.clearcoat_roughness_layer2, roughness_floor);
 
     // sample randoms
     float r1 = rand(rng_state);
@@ -265,7 +284,7 @@ float3 ACESFilm(float3 x) {
     // Base Specular candidate
     float r4 = rand(rng_state);
     float r5 = rand(rng_state);
-    float3 h_local = sample_GGX_half(r4, r5, payload.roughness);
+    float3 h_local = sample_GGX_half(r4, r5, eff_roughness);
     float3 H_base = h_local.x * tangent + h_local.y * bitangent + h_local.z * N;
     H_base = normalize(H_base);
     float3 L_spec_base = normalize(reflect(-V, H_base));
@@ -273,7 +292,7 @@ float3 ACESFilm(float3 x) {
     // Clearcoat Specular candidate
     float r6 = rand(rng_state);
     float r7 = rand(rng_state);
-    float3 h_local_cc = sample_GGX_half(r6, r7, payload.clearcoat_roughness);
+    float3 h_local_cc = sample_GGX_half(r6, r7, eff_clearcoat_roughness);
     float3 H_cc = h_local_cc.x * tangent + h_local_cc.y * bitangent + h_local_cc.z * N;
     H_cc = normalize(H_cc);
     float3 L_spec_cc = normalize(reflect(-V, H_cc));
@@ -294,10 +313,10 @@ float3 ACESFilm(float3 x) {
 
     // Calculate combined PDF
     float pdf_diff = max(dot(N, next_dir), 0.0) / PI;
-    float pdf_spec_base = pdf_GGX_for_direction(N, V, next_dir, payload.roughness);
+    float pdf_spec_base = pdf_GGX_for_direction(N, V, next_dir, eff_roughness);
     float pdf_spec_cc = 0.0;
     if (payload.clearcoat > 0.0) {
-        pdf_spec_cc = pdf_GGX_for_direction(N, V, next_dir, payload.clearcoat_roughness);
+        pdf_spec_cc = pdf_GGX_for_direction(N, V, next_dir, eff_clearcoat_roughness);
     }
 
     float pdf_total = p_clearcoat * pdf_spec_cc + p_base * (q_spec_base * pdf_spec_base + q_diff_base * pdf_diff);
@@ -313,16 +332,16 @@ float3 ACESFilm(float3 x) {
         // Use multi-layer material BRDF
         brdf = eval_brdf_multi_layer(
             N, next_dir, V,
-            payload.albedo, payload.roughness, payload.metallic,
-            payload.ao, payload.clearcoat, payload.clearcoat_roughness,
-            payload.albedo_layer2, payload.roughness_layer2, payload.metallic_layer2,
-            payload.ao_layer2, payload.clearcoat_layer2, payload.clearcoat_roughness_layer2,
+            payload.albedo, eff_roughness, payload.metallic,
+            payload.ao, payload.clearcoat, eff_clearcoat_roughness,
+            payload.albedo_layer2, eff_roughness_layer2, payload.metallic_layer2,
+            payload.ao_layer2, payload.clearcoat_layer2, eff_clearcoat_roughness_layer2,
             payload.thin, payload.blend_factor, payload.layer_thickness,
             payload.alpha_layer2  // Use alpha from texture for transparency
         );
     } else {
         // Use single-layer material BRDF (backward compatible)
-        brdf = eval_brdf(N, next_dir, V, payload.albedo, payload.roughness, payload.metallic, payload.ao, payload.clearcoat, payload.clearcoat_roughness);
+        brdf = eval_brdf(N, next_dir, V, payload.albedo, eff_roughness, payload.metallic, payload.ao, payload.clearcoat, eff_clearcoat_roughness);
     }
 
     // This part remains the same, we do not change the coeff.
@@ -343,7 +362,7 @@ float3 ACESFilm(float3 x) {
     p = clamp(p, 0.10, 0.99);
     
     // Force termination if throughput is too large (prevents fireflies)
-    if (any(throughput > float3(1e5, 1e5, 1e5))) {
+    if (any(throughput > float3(1e4, 1e4, 1e4))) {
       break; // Force termination to prevent firefly
     }
     

@@ -5,9 +5,14 @@
 #include "sampling.hlsl"
 #include "rng.hlsl"
 
-// Ray-AABB intersection
+// Ray-AABB intersection with safe division for zero direction components
 bool IntersectAABB(RayDesc ray, float3 min_p, float3 max_p, out float t_enter, out float t_exit) {
-    float3 inv_d = 1.0 / ray.Direction;
+    float3 inv_d = float3(
+        ray.Direction.x != 0.0 ? 1.0 / ray.Direction.x : 1e6,
+        ray.Direction.y != 0.0 ? 1.0 / ray.Direction.y : 1e6,
+        ray.Direction.z != 0.0 ? 1.0 / ray.Direction.z : 1e6
+    );
+
     float3 t0 = (min_p - ray.Origin) * inv_d;
     float3 t1 = (max_p - ray.Origin) * inv_d;
     
@@ -17,7 +22,7 @@ bool IntersectAABB(RayDesc ray, float3 min_p, float3 max_p, out float t_enter, o
     t_enter = max(max(t_small.x, t_small.y), t_small.z);
     t_exit = min(min(t_big.x, t_big.y), t_big.z);
     
-    return t_enter < t_exit && t_exit > 0.0;
+    return (t_enter <= t_exit) && (t_exit > ray.TMin);
 }
 
 // Sample homogeneous volume
@@ -29,6 +34,11 @@ bool SampleHomogeneousVolume(
     VolumeRegion vol, 
     float hit_dist
 ) {
+    // Skip when extinction is not positive
+    if (vol.sigma_t <= 0.0) {
+        return false;
+    }
+
     float t_enter, t_exit;
     
     // 1. Check intersection with volume bounds
@@ -36,27 +46,36 @@ bool SampleHomogeneousVolume(
         return false;
     }
     
-    // 2. Clip intersection to the ray segment [0, hit_dist]
-    t_enter = max(t_enter, 0.0);
+    // 2. Clip intersection to the ray segment [TMin, hit_dist]
+    t_enter = max(t_enter, ray.TMin);
     t_exit = min(t_exit, hit_dist);
     
     // If the segment is invalid or empty, no volume interaction
-    if (t_enter >= t_exit) return false;
+    if (t_enter >= t_exit) {
+        return false;
+    }
     
-    // 3. Sample scattering distance
-    float dist_in_volume = t_exit - t_enter;
-    float dist_sample = -log(rand(rng_state)) / vol.sigma_t;
+    // 3. Sample scattering distance from exponential distribution
+    float segment_length = t_exit - t_enter;
+    float u = max(1e-6, 1.0 - rand(rng_state));
+    float dist_sample = -log(u) / vol.sigma_t;
+
+    float3 sigma_t_vec = float3(vol.sigma_t, vol.sigma_t, vol.sigma_t);
+    float3 albedo = vol.sigma_s / max(vol.sigma_t, 1e-6);
     
-    // 4. Check if scattering happens within the volume segment
-    if (dist_sample < dist_in_volume) {
-        // Scattering event
+    if (dist_sample < segment_length) {
+        // Scattering event inside the medium
+        float3 trans = exp(-sigma_t_vec * dist_sample);
+        throughput *= trans * albedo;
         ray.Origin = ray.Origin + ray.Direction * (t_enter + dist_sample);
         ray.Direction = sample_uniform_sphere(rand(rng_state), rand(rng_state));
-        throughput *= (vol.sigma_s / vol.sigma_t);
+        ray.TMin = 1e-3;
         return true;
     }
     
-    // No scattering, ray passes through (transmittance is handled by importance sampling)
+    // No scattering before exiting the volume; apply transmittance for the full segment
+    float3 trans_exit = exp(-sigma_t_vec * segment_length);
+    throughput *= trans_exit;
     return false;
 }
 

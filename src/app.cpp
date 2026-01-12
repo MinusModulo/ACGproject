@@ -280,7 +280,7 @@ void Application::OnInit() {
         //FFD5B3
         sunLight.color = glm::vec3(1.0f, 0.83f, 0.7f);       // Warm peach tone
         // Use a higher, more physical-scale strength so indirect bounces carry visible color
-        sunLight.intensity = 7000.0f;                          // Blender-ish sun order of magnitude
+        sunLight.intensity = 5000.0f;                          // Blender-ish sun order of magnitude
         // Blender Angle is a full cone angle; our angular_radius is half-angle in radians
         sunLight.angular_radius = glm::radians(2.5f);           // 5° / 2
         // Direction: Blender sun aims along -Z after XYZ Euler (77.202°, -35°, 91.118°)
@@ -662,10 +662,10 @@ void Application::OnInit() {
     // Create volume info buffer
     core_->CreateBuffer(sizeof(VolumeRegion), grassland::graphics::BUFFER_TYPE_DYNAMIC, &volume_info_buffer_);
     VolumeRegion initial_volume{};
-    initial_volume.min_p = glm::vec3(2.3f, 1.1f, 1.1f);
-    initial_volume.max_p = glm::vec3(2.4f, 1.2f, 1.2f);
-    initial_volume.sigma_t = 0.6f;
-    initial_volume.sigma_s = glm::vec3(0.2f, 0.2f, 0.2f);
+    initial_volume.min_p = glm::vec3(-1.0f, 0.0f, -1.0f);
+    initial_volume.max_p = glm::vec3(1.0f, 2.0f, 1.0f);
+    initial_volume.sigma_t = 0.8f;
+    initial_volume.sigma_s = glm::vec3(0.72f, 0.72f, 0.72f);
     volume_info_buffer_->UploadData(&initial_volume, sizeof(VolumeRegion));
 
     // Create skybox enable buffer
