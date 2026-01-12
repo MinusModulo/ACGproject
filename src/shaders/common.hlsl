@@ -8,6 +8,9 @@
 struct CameraInfo {
   float4x4 screen_to_camera;
   float4x4 camera_to_world;
+  float aperture;
+  float focus_distance;
+  float2 pad_camera;
 };
 
 struct Material {

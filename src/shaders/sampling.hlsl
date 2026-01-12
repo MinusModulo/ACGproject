@@ -26,6 +26,25 @@ float3 sample_uniform_sphere(float u1, float u2) {
   return float3(r * cos(phi), r * sin(phi), z);
 }
 
+// concentric disk sampling for thin-lens DOF
+float2 sample_concentric_disk(float u1, float u2) {
+    float2 u = 2.0 * float2(u1, u2) - 1.0;
+    if (abs(u.x) < eps && abs(u.y) < eps) {
+        return float2(0.0, 0.0);
+    }
+
+    float r;
+    float phi;
+    if (abs(u.x) > abs(u.y)) {
+        r = u.x;
+        phi = (PI * 0.25) * (u.y / u.x);
+    } else {
+        r = u.y;
+        phi = (PI * 0.5) - (PI * 0.25) * (u.x / u.y);
+    }
+    return r * float2(cos(phi), sin(phi));
+}
+
 // sample GGX microfacet half-vector in tangent space
 float3 sample_GGX_half(float u1, float u2, float roughness) {
   // using common mapping: sample theta via tan^2(theta) = a^2 * u1/(1-u1)

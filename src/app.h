@@ -7,6 +7,9 @@
 struct CameraObject {
     glm::mat4 screen_to_camera;
     glm::mat4 camera_to_world;
+    float aperture;
+    float focus_distance;
+    glm::vec2 padding;
 };
 
 struct VolumeRegion {
@@ -101,6 +104,13 @@ private:
     glm::vec3 camera_front_;
     glm::vec3 camera_up_;
     float camera_speed_;
+
+    float fov_y_deg_;
+    float aperture_;
+    float focus_distance_;
+    float last_aperture_;
+    float last_focus_distance_;
+    float last_fov_y_deg_;
 
 
     void OnMouseMove(double xpos, double ypos); // Mouse event handler

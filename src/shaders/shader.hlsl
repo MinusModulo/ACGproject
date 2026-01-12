@@ -53,12 +53,28 @@ float3 ACESFilm(float3 x) {
   float4 target = mul(camera_info.screen_to_camera, float4(d, 1, 1));
   float4 direction = mul(camera_info.camera_to_world, float4(target.xyz, 0));
 
-  // The ray init part remains the same
+  // Thin-lens camera: sample aperture to get depth of field
+  float3 cam_forward = normalize(mul(camera_info.camera_to_world, float4(0, 0, -1, 0)).xyz);
+  float3 cam_right = normalize(mul(camera_info.camera_to_world, float4(1, 0, 0, 0)).xyz);
+  float3 cam_up = normalize(mul(camera_info.camera_to_world, float4(0, 1, 0, 0)).xyz);
+
+  float3 primary_dir = normalize(direction.xyz);
+  float3 ray_origin = origin.xyz;
+
+  if (camera_info.aperture > 0.0 && camera_info.focus_distance > 0.0) {
+    float2 lens = sample_concentric_disk(rand(rng_state), rand(rng_state)) * camera_info.aperture;
+    float focus_t = camera_info.focus_distance / max(dot(primary_dir, cam_forward), 1e-4);
+    float3 focus_point = ray_origin + primary_dir * focus_t;
+    float3 aperture_offset = cam_right * lens.x + cam_up * lens.y;
+    ray_origin += aperture_offset;
+    primary_dir = normalize(focus_point - ray_origin);
+  }
+
   float t_min = eps;
   float t_max = 1e4;
   RayDesc ray;
-  ray.Origin = origin.xyz;
-  ray.Direction = normalize(direction.xyz);
+  ray.Origin = ray_origin;
+  ray.Direction = primary_dir;
   ray.TMin = t_min;
   ray.TMax = t_max;
 

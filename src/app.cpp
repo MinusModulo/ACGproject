@@ -10,6 +10,7 @@
 #include "tiny_obj_loader.h"
 
 #include <chrono>
+#include <cmath>
 #include <iomanip>
 #include <sstream>
 #include <filesystem>
@@ -670,13 +671,14 @@ void Application::OnInit() {
     // homogeneous_volume.sigma_s = glm::vec3(0.72f, 0.72f, 0.72f);
 
     // Inhomogeneous volume instance (majorant sigma_t used by ratio tracking)
+    /*
     VolumeRegion inhom_volume{};
     inhom_volume.min_p = glm::vec3(-2.0f, 0.0f, -2.0f);
     inhom_volume.max_p = glm::vec3(2.0f, 2.5f, 2.0f);
     inhom_volume.sigma_t = 0.8f;                     // lower density for brighter fog
     inhom_volume.sigma_s = glm::vec3(0.72f, 0.70f, 0.68f); // near-white, high albedo
     volume_info_buffer_->UploadData(&inhom_volume, sizeof(VolumeRegion));
-
+*/
     // Create skybox enable buffer
     core_->CreateBuffer(sizeof(SkyInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &sky_info_buffer_);
     SkyInfo sky_info{};
@@ -697,6 +699,13 @@ void Application::OnInit() {
     camera_up_ = glm::vec3{ 0.0f, 1.0f, 0.0f }; // World up
     camera_speed_ = 0.1f;
 
+    fov_y_deg_ = 60.0f;
+    aperture_ = 0.0f;
+    focus_distance_ = 5.0f;
+    last_aperture_ = aperture_;
+    last_focus_distance_ = focus_distance_;
+    last_fov_y_deg_ = fov_y_deg_;
+
     // Initialize new mouse/view variables
     yaw_ = -90.0f; // Point down -Z
     pitch_ = 0.0f;
@@ -715,9 +724,12 @@ void Application::OnInit() {
     // Set initial camera buffer data
     CameraObject camera_object{};
     camera_object.screen_to_camera = glm::inverse(
-        glm::perspective(glm::radians(65.5f), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 10.0f));
+        glm::perspective(glm::radians(fov_y_deg_), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 10.0f));
     camera_object.camera_to_world =
         glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
+    camera_object.aperture = aperture_;
+    camera_object.focus_distance = focus_distance_;
+    camera_object.padding = glm::vec2(0.0f);
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
     core_->CreateImage(window_->GetWidth(), window_->GetHeight(), grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT,
@@ -860,6 +872,19 @@ void Application::OnUpdate() {
     if (alive_) {
         // Process keyboard input to move camera
         ProcessInput();
+
+        if (!camera_enabled_) {
+            bool camera_params_changed =
+                std::abs(aperture_ - last_aperture_) > 1e-4f ||
+                std::abs(focus_distance_ - last_focus_distance_) > 1e-3f ||
+                std::abs(fov_y_deg_ - last_fov_y_deg_) > 1e-3f;
+            if (camera_params_changed) {
+                film_->Reset();
+            }
+        }
+        last_aperture_ = aperture_;
+        last_focus_distance_ = focus_distance_;
+        last_fov_y_deg_ = fov_y_deg_;
         
         // Detect camera state change and reset accumulation if camera started moving
         if (camera_enabled_ != last_camera_enabled_) {
@@ -893,9 +918,12 @@ void Application::OnUpdate() {
         // Update the camera buffer with new position/orientation
         CameraObject camera_object{};
         camera_object.screen_to_camera = glm::inverse(
-            glm::perspective(glm::radians(60.0f), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 10.0f));
+            glm::perspective(glm::radians(fov_y_deg_), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 10.0f));
         camera_object.camera_to_world =
             glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
+        camera_object.aperture = aperture_;
+        camera_object.focus_distance = focus_distance_;
+        camera_object.padding = glm::vec2(0.0f);
         camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
         // Update render settings (exposure)
@@ -1048,6 +1076,10 @@ void Application::RenderInfoOverlay() {
     ImGui::Text("Yaw: %.1f°  Pitch: %.1f°", yaw_, pitch_);
     ImGui::Text("Speed: %.3f", camera_speed_);
     ImGui::Text("Sensitivity: %.2f", mouse_sensitivity_);
+    ImGui::SliderFloat("FOV (deg)", &fov_y_deg_, 30.0f, 90.0f, "%.1f");
+    ImGui::SliderFloat("Focus Dist", &focus_distance_, 0.2f, 30.0f, "%.2f");
+    // Increase the maximum aperture to make the DoF effect more visible
+    ImGui::SliderFloat("Aperture", &aperture_, 0.0f, 0.1f, "%.3f");
 
     ImGui::Spacing();
 
@@ -1369,6 +1401,9 @@ void Application::ExportFrame(const std::string& filename,
         glm::perspective(glm::radians(fov_deg), (float)width / (float)height, 0.1f, 10.0f));
     camera_object.camera_to_world =
         glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
+    camera_object.aperture = aperture_;
+    camera_object.focus_distance = glm::length(cam_target - cam_pos);
+    camera_object.padding = glm::vec2(0.0f);
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
     // Update render settings (keep exposure consistent with interactive view)
@@ -1429,8 +1464,11 @@ void Application::ExportFrame(const std::string& filename,
 
     CameraObject prev_camera{};
     prev_camera.screen_to_camera = glm::inverse(
-        glm::perspective(glm::radians(60.0f), (float)prev_width / (float)prev_height, 0.1f, 10.0f));
+        glm::perspective(glm::radians(fov_y_deg_), (float)prev_width / (float)prev_height, 0.1f, 10.0f));
     prev_camera.camera_to_world =
         glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
+    prev_camera.aperture = aperture_;
+    prev_camera.focus_distance = focus_distance_;
+    prev_camera.padding = glm::vec2(0.0f);
     camera_object_buffer_->UploadData(&prev_camera, sizeof(CameraObject));
 }
