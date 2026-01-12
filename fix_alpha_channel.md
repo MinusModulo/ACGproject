@@ -410,3 +410,4 @@ scene_->UpdateMaterialsBuffer();
 - 添加调试输出，检查 shader 中的 alpha 值
 - 考虑使用更高级的透明度处理（如 alpha 混合而不是 alpha 测试）
 
+

@@ -448,3 +448,4 @@ float w_light = mis_weight_power_safe(pdf_light_actual, pdf_brdf_for_light_dir);
 - **2024-12-22**：创建文档，分析 fireflies 问题并提出改进方案
 
 
+
