@@ -106,6 +106,13 @@ float3 ACESFilm(float3 x) {
     vol.pad0 = 0;
     vol.pad1 = 0;
 
+    if (SampleInhomogeneousVolume(ray, throughput, rng_state, vol, hit_dist)) {
+      depth++;
+      payload.rng_state = rng_state;
+      continue;
+    }
+
+    // Optional fallback to homogeneous sampling if needed
     if (SampleHomogeneousVolume(ray, throughput, rng_state, vol, hit_dist)) {
         depth++;
         payload.rng_state = rng_state;

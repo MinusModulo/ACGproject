@@ -661,12 +661,21 @@ void Application::OnInit() {
 
     // Create volume info buffer
     core_->CreateBuffer(sizeof(VolumeRegion), grassland::graphics::BUFFER_TYPE_DYNAMIC, &volume_info_buffer_);
-    VolumeRegion initial_volume{};
-    initial_volume.min_p = glm::vec3(-1.0f, 0.0f, -1.0f);
-    initial_volume.max_p = glm::vec3(1.0f, 2.0f, 1.0f);
-    initial_volume.sigma_t = 0.8f;
-    initial_volume.sigma_s = glm::vec3(0.72f, 0.72f, 0.72f);
-    volume_info_buffer_->UploadData(&initial_volume, sizeof(VolumeRegion));
+
+    // Homogeneous test volume (disabled)
+    // VolumeRegion homogeneous_volume{};
+    // homogeneous_volume.min_p = glm::vec3(-1.0f, 0.0f, -1.0f);
+    // homogeneous_volume.max_p = glm::vec3(1.0f, 2.0f, 1.0f);
+    // homogeneous_volume.sigma_t = 0.8f;
+    // homogeneous_volume.sigma_s = glm::vec3(0.72f, 0.72f, 0.72f);
+
+    // Inhomogeneous volume instance (majorant sigma_t used by ratio tracking)
+    VolumeRegion inhom_volume{};
+    inhom_volume.min_p = glm::vec3(-2.0f, 0.0f, -2.0f);
+    inhom_volume.max_p = glm::vec3(2.0f, 2.5f, 2.0f);
+    inhom_volume.sigma_t = 0.8f;                     // lower density for brighter fog
+    inhom_volume.sigma_s = glm::vec3(0.72f, 0.70f, 0.68f); // near-white, high albedo
+    volume_info_buffer_->UploadData(&inhom_volume, sizeof(VolumeRegion));
 
     // Create skybox enable buffer
     core_->CreateBuffer(sizeof(SkyInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &sky_info_buffer_);
