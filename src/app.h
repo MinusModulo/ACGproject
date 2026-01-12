@@ -7,9 +7,11 @@
 struct CameraObject {
     glm::mat4 screen_to_camera;
     glm::mat4 camera_to_world;
+    glm::mat4 prev_camera_to_world;
     float aperture;
     float focus_distance;
-    glm::vec2 padding;
+    float shutter_speed;
+    int enable_motion_blur;
 };
 
 struct VolumeRegion {
@@ -172,4 +174,9 @@ private:
     // Saturation boost controls
     float saturation_boost_light_ = 1.5f;  // Saturation boost for bright areas
     float saturation_boost_shadow_ = 1.2f;  // Saturation boost for dark areas
+    // Motion Blur
+    bool motion_blur_enabled_{ false };
+    float shutter_speed_{ 0.5f };
+    glm::mat4 prev_camera_to_world_{ 1.0f };
+    glm::mat4 current_camera_to_world_{ 1.0f };
 };

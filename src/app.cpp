@@ -743,7 +743,11 @@ void Application::OnInit() {
         glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
     camera_object.aperture = aperture_;
     camera_object.focus_distance = focus_distance_;
-    camera_object.padding = glm::vec2(0.0f);
+    camera_object.prev_camera_to_world = camera_object.camera_to_world;
+    prev_camera_to_world_ = camera_object.camera_to_world;
+    current_camera_to_world_ = camera_object.camera_to_world;
+    camera_object.shutter_speed = shutter_speed_;
+    camera_object.enable_motion_blur = motion_blur_enabled_ ? 1 : 0;
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
     core_->CreateImage(window_->GetWidth(), window_->GetHeight(), grassland::graphics::IMAGE_FORMAT_R32G32B32A32_SFLOAT,
@@ -933,11 +937,34 @@ void Application::OnUpdate() {
         CameraObject camera_object{};
         camera_object.screen_to_camera = glm::inverse(
             glm::perspective(glm::radians(fov_y_deg_), (float)window_->GetWidth() / (float)window_->GetHeight(), 0.1f, 10.0f));
-        camera_object.camera_to_world =
-            glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
+        
+        // Calculate new camera to world matrix
+        glm::mat4 new_camera_to_world = glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
+        
+        // Update current/prev matrices ONLY if camera is enabled (moving)
+        if (camera_enabled_) {
+            if (current_camera_to_world_ == glm::mat4(1.0f)) {
+                // Initialize if not set
+                current_camera_to_world_ = new_camera_to_world;
+            }
+            prev_camera_to_world_ = current_camera_to_world_;
+            current_camera_to_world_ = new_camera_to_world;
+        } else {
+            // Camera disabled (accumulating): Keep prev/current FROZEN to preserve motion blur vector
+            // But ensure current matches reality if we just initialized or something weird happened
+            if (current_camera_to_world_ == glm::mat4(1.0f)) {
+                current_camera_to_world_ = new_camera_to_world;
+                prev_camera_to_world_ = new_camera_to_world;
+            }
+        }
+
+        camera_object.camera_to_world = current_camera_to_world_;
+        camera_object.prev_camera_to_world = prev_camera_to_world_;
         camera_object.aperture = aperture_;
         camera_object.focus_distance = focus_distance_;
-        camera_object.padding = glm::vec2(0.0f);
+        camera_object.shutter_speed = shutter_speed_;
+        camera_object.enable_motion_blur = motion_blur_enabled_ ? 1 : 0;
+        
         camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
         // Update render settings (exposure and cartoon style)
@@ -1104,6 +1131,11 @@ void Application::RenderInfoOverlay() {
     ImGui::SliderFloat("Focus Dist", &focus_distance_, 0.2f, 30.0f, "%.2f");
     // Increase the maximum aperture to make the DoF effect more visible
     ImGui::SliderFloat("Aperture", &aperture_, 0.0f, 0.1f, "%.3f");
+
+    ImGui::Checkbox("Motion Blur", &motion_blur_enabled_);
+    if (motion_blur_enabled_) {
+        ImGui::SliderFloat("Shutter Speed", &shutter_speed_, 0.0f, 1.0f);
+    }
 
     ImGui::Spacing();
 
@@ -1455,7 +1487,9 @@ void Application::ExportFrame(const std::string& filename,
         glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
     camera_object.aperture = aperture_;
     camera_object.focus_distance = glm::length(cam_target - cam_pos);
-    camera_object.padding = glm::vec2(0.0f);
+    camera_object.prev_camera_to_world = camera_object.camera_to_world; // Disable blur for static export
+    camera_object.shutter_speed = 0.0f;
+    camera_object.enable_motion_blur = 0;
     camera_object_buffer_->UploadData(&camera_object, sizeof(CameraObject));
 
     // Update render settings (keep exposure consistent with interactive view)
@@ -1531,6 +1565,8 @@ void Application::ExportFrame(const std::string& filename,
         glm::inverse(glm::lookAt(camera_pos_, camera_pos_ + camera_front_, camera_up_));
     prev_camera.aperture = aperture_;
     prev_camera.focus_distance = focus_distance_;
-    prev_camera.padding = glm::vec2(0.0f);
+    prev_camera.prev_camera_to_world = prev_camera_to_world_;
+    prev_camera.shutter_speed = shutter_speed_;
+    prev_camera.enable_motion_blur = motion_blur_enabled_ ? 1 : 0;
     camera_object_buffer_->UploadData(&prev_camera, sizeof(CameraObject));
 }
