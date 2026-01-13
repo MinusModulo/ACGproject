@@ -121,7 +121,13 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 geometr
     
     float safe_roughness = max(roughness, min_roughness);
     float3 brdf_light = eval_brdf(normal, light_dir, view_dir, albedo, safe_roughness, metallic, ao, clearcoat, clearcoat_roughness);
-    if (!CastShadowRay(position + geometric_normal * 1e-3, light_dir, max_distance - 1e-3)) {
+    
+    // Conditional shadow ignoring: skip shadow check if NdotL exceeds threshold
+    bool should_ignore_shadow = (render_settings.cartoon_enabled == 1) && 
+                                (NdotL_light > render_settings.shadow_ignore_threshold);
+    bool is_lit = should_ignore_shadow || !CastShadowRay(position + geometric_normal * 1e-3, light_dir, max_distance - 1e-3);
+    
+    if (is_lit) {
       if (render_settings.cartoon_enabled == 1) {
         float albedo_lum = dot(albedo, float3(0.2126, 0.7152, 0.0722));
         float3 cool_color = albedo_lum * float3(0.6, 0.6, 0.8) * 0.15;
@@ -245,7 +251,12 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 geometr
         light_radiance_brdf = light.color * light.intensity;
       }
       
-      if (!CastShadowRay(position + geometric_normal * 1e-3, brdf_dir, dist_to_light - 1e-3)) {
+      // Conditional shadow ignoring for BRDF sampling
+      bool should_ignore_shadow_brdf = (render_settings.cartoon_enabled == 1) && 
+                                       (NdotL_brdf > render_settings.shadow_ignore_threshold);
+      bool is_lit_brdf = should_ignore_shadow_brdf || !CastShadowRay(position + geometric_normal * 1e-3, brdf_dir, dist_to_light - 1e-3);
+      
+      if (is_lit_brdf) {
         float safe_roughness = max(roughness, 0.15);
         float3 brdf_brdf = eval_brdf(normal, brdf_dir, view_dir, albedo, safe_roughness, metallic, ao, clearcoat, clearcoat_roughness);
         contribution_brdf = brdf_brdf * light_radiance_brdf * NdotL_brdf;
@@ -389,7 +400,12 @@ float3 EvaluateLightMultiLayer(
             alpha_layer2
         );
         
-        if (!CastShadowRay(position + geometric_normal * 1e-3, light_dir, max_distance - 1e-3)) {
+        // Conditional shadow ignoring for multi-layer materials
+        bool should_ignore_shadow_ml = (render_settings.cartoon_enabled == 1) && 
+                                       (NdotL_light > render_settings.shadow_ignore_threshold);
+        bool is_lit_ml = should_ignore_shadow_ml || !CastShadowRay(position + geometric_normal * 1e-3, light_dir, max_distance - 1e-3);
+        
+        if (is_lit_ml) {
             if (render_settings.cartoon_enabled == 1) {
               float albedo_lum = dot(albedo_layer1, float3(0.2126, 0.7152, 0.0722));
               float3 cool_color = albedo_lum * float3(0.6, 0.6, 0.8) * 0.15;
@@ -498,7 +514,12 @@ float3 EvaluateLightMultiLayer(
               light_radiance_brdf = light.color * light.intensity;
             }
             
-            if (!CastShadowRay(position + geometric_normal * 1e-3, brdf_dir, dist_to_light - 1e-3)) {
+            // Conditional shadow ignoring for multi-layer BRDF sampling
+            bool should_ignore_shadow_brdf_ml = (render_settings.cartoon_enabled == 1) && 
+                                                 (NdotL_brdf > render_settings.shadow_ignore_threshold);
+            bool is_lit_brdf_ml = should_ignore_shadow_brdf_ml || !CastShadowRay(position + geometric_normal * 1e-3, brdf_dir, dist_to_light - 1e-3);
+            
+            if (is_lit_brdf_ml) {
                 float safe_roughness_layer1 = max(roughness_layer1, 0.15);
                 float safe_roughness_layer2 = max(roughness_layer2, 0.15);
                 

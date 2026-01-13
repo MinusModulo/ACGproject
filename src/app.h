@@ -36,24 +36,13 @@ struct RenderSettings {
     float specular_hardness;
     float outline_width;
     float outline_threshold;
-    // Enhanced color effects
-    float hue_shift_strength;
-    float rim_power;
-    glm::vec3 rim_color;
-    float normal_coloring_strength;
-    int use_gradient_mapping;
-    // Color bleeding effects (插画风格藏色)
-    float color_bleeding_strength;
-    float color_temperature_shift;
-    glm::vec3 shadow_tint;
-    glm::vec3 highlight_tint;
-    int use_complementary_colors;
-    // Anime style rendering (动漫风格)
-    float anime_saturation_boost;
-    float anime_hue_variation;
-    float texture_smoothing;
-    float roughness_floor;
-    int use_rainbow_mapping;
+    // Flat cartoon style parameters
+    float binary_threshold;
+    float shadow_ignore_threshold;
+    float highlight_threshold;
+    // Saturation boost parameters
+    float saturation_boost_light;
+    float saturation_boost_shadow;
 };
 
 class Application {
@@ -173,24 +162,12 @@ private:
     float outline_width_ = 0.02f;  // Narrower default to reduce over-outlining
     float outline_threshold_ = 0.85f;  // Higher default to only outline true edges
     
-    // Enhanced color effects (AGGRESSIVE defaults for vibrant, fancy colors)
-    float hue_shift_strength_ = 0.4f;  // Higher default for more color variation
-    float rim_power_ = 1.5f;  // Higher default for more visible rim lighting
-    glm::vec3 rim_color_ = glm::vec3(0.4f, 0.7f, 1.0f);  // More saturated blue rim
-    float normal_coloring_strength_ = 0.5f;  // Higher default for more color variation
-    bool use_gradient_mapping_ = true;  // Enabled by default for vibrant colors
+    // Flat cartoon style controls
+    float binary_threshold_ = 0.5f;  // Threshold for binary lighting (0.0-1.0)
+    float shadow_ignore_threshold_ = 0.7f;  // NdotL threshold to ignore shadows
+    float highlight_threshold_ = 0.8f;  // Threshold for flat highlight effect
     
-    // Color bleeding effects (插画风格藏色) - AGGRESSIVE defaults
-    float color_bleeding_strength_ = 0.6f;  // Higher default for more fancy look
-    float color_temperature_shift_ = 0.7f;  // Higher default for strong temperature separation
-    glm::vec3 shadow_tint_ = glm::vec3(0.5f, 0.7f, 1.0f);  // Cool blue for shadows
-    glm::vec3 highlight_tint_ = glm::vec3(1.0f, 0.9f, 0.7f);  // Warm yellow for highlights
-    bool use_complementary_colors_ = false;  // Optional complementary color bleeding
-    
-    // Anime style rendering (动漫风格) - AGGRESSIVE defaults for vibrant colors
-    float anime_saturation_boost_ = 3.0f;  // Ultra-high saturation boost (300%)
-    float anime_hue_variation_ = 0.8f;  // High hue variation for rainbow colors
-    float texture_smoothing_ = 0.7f;  // High smoothing to weaken texture details
-    float roughness_floor_ = 0.3f;  // Higher roughness floor to reduce specular details
-    bool use_rainbow_mapping_ = true;  // Default enabled for rainbow colors
+    // Saturation boost controls
+    float saturation_boost_light_ = 1.5f;  // Saturation boost for bright areas
+    float saturation_boost_shadow_ = 1.2f;  // Saturation boost for dark areas
 };

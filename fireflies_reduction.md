@@ -449,3 +449,4 @@ float w_light = mis_weight_power_safe(pdf_light_actual, pdf_brdf_for_light_dir);
 
 
 
+

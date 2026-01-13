@@ -112,24 +112,13 @@ struct RenderSettings {
   float specular_hardness;
   float outline_width;
   float outline_threshold;
-  // Enhanced color effects
-  float hue_shift_strength;
-  float rim_power;
-  float3 rim_color;
-  float normal_coloring_strength;
-  int use_gradient_mapping;
-  // Color bleeding effects (插画风格藏色)
-  float color_bleeding_strength;
-  float color_temperature_shift;
-  float3 shadow_tint;
-  float3 highlight_tint;
-  int use_complementary_colors;
-  // Anime style rendering (动漫风格)
-  float anime_saturation_boost;
-  float anime_hue_variation;
-  float texture_smoothing;
-  float roughness_floor;
-  int use_rainbow_mapping;
+  // Flat cartoon style parameters
+  float binary_threshold;
+  float shadow_ignore_threshold;
+  float highlight_threshold;
+  // Saturation boost parameters
+  float saturation_boost_light;
+  float saturation_boost_shadow;
 };
 
 struct Light {
@@ -211,9 +200,6 @@ struct RayPayload {
   
   // Cartoon style: outline factor (0.0 = no outline, 1.0 = full outline)
   float outline_factor;
-  
-  // Enhanced color effects
-  float rim_factor;  // Rim lighting intensity
 };
 
 // Constants

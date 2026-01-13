@@ -697,22 +697,11 @@ void Application::OnInit() {
     render_settings.specular_hardness = specular_hardness_;
     render_settings.outline_width = outline_width_;
     render_settings.outline_threshold = outline_threshold_;
-    render_settings.hue_shift_strength = hue_shift_strength_;
-    render_settings.rim_power = rim_power_;
-    render_settings.rim_color = glm::vec3(rim_color_.x, rim_color_.y, rim_color_.z);
-    render_settings.normal_coloring_strength = normal_coloring_strength_;
-    render_settings.use_gradient_mapping = use_gradient_mapping_ ? 1 : 0;
-    render_settings.color_bleeding_strength = color_bleeding_strength_;
-    render_settings.color_temperature_shift = color_temperature_shift_;
-    render_settings.shadow_tint = glm::vec3(shadow_tint_.x, shadow_tint_.y, shadow_tint_.z);
-    render_settings.highlight_tint = glm::vec3(highlight_tint_.x, highlight_tint_.y, highlight_tint_.z);
-    render_settings.use_complementary_colors = use_complementary_colors_ ? 1 : 0;
-    // Anime style rendering
-    render_settings.anime_saturation_boost = anime_saturation_boost_;
-    render_settings.anime_hue_variation = anime_hue_variation_;
-    render_settings.texture_smoothing = texture_smoothing_;
-    render_settings.roughness_floor = roughness_floor_;
-    render_settings.use_rainbow_mapping = use_rainbow_mapping_ ? 1 : 0;
+    render_settings.binary_threshold = binary_threshold_;
+    render_settings.shadow_ignore_threshold = shadow_ignore_threshold_;
+    render_settings.highlight_threshold = highlight_threshold_;
+    render_settings.saturation_boost_light = saturation_boost_light_;
+    render_settings.saturation_boost_shadow = saturation_boost_shadow_;
     render_settings_buffer_->UploadData(&render_settings, sizeof(RenderSettings));
 
     // Initialize camera state member variables
@@ -956,6 +945,11 @@ void Application::OnUpdate() {
         render_settings.specular_hardness = specular_hardness_;
         render_settings.outline_width = outline_width_;
         render_settings.outline_threshold = outline_threshold_;
+        render_settings.binary_threshold = binary_threshold_;
+        render_settings.shadow_ignore_threshold = shadow_ignore_threshold_;
+        render_settings.highlight_threshold = highlight_threshold_;
+        render_settings.saturation_boost_light = saturation_boost_light_;
+        render_settings.saturation_boost_shadow = saturation_boost_shadow_;
         render_settings_buffer_->UploadData(&render_settings, sizeof(RenderSettings));
 
 
@@ -1185,36 +1179,23 @@ void Application::RenderInfoOverlay() {
         ImGui::SliderFloat("Diffuse Bands", &diffuse_bands_, 2.0f, 16.0f, "%.0f");
         ImGui::SliderFloat("Specular Hardness", &specular_hardness_, 0.0f, 1.0f, "%.2f");
         ImGui::SliderFloat("Outline Width", &outline_width_, 0.01f, 0.1f, "%.3f");
-        ImGui::SliderFloat("Outline Threshold", &outline_threshold_, 0.1f, 0.5f, "%.2f");
+        ImGui::SliderFloat("Outline Threshold", &outline_threshold_, 0.1f, 1.0f, "%.2f");
         
         ImGui::Spacing();
-        ImGui::SeparatorText("Enhanced Color Effects");
-        
-        ImGui::Checkbox("Gradient Mapping", &use_gradient_mapping_);
-        ImGui::SliderFloat("Hue Shift", &hue_shift_strength_, 0.0f, 1.0f, "%.2f");
-        ImGui::SliderFloat("Rim Power", &rim_power_, 0.0f, 2.0f, "%.2f");
-        if (rim_power_ > 0.0f) {
-            ImGui::ColorEdit3("Rim Color", &rim_color_[0]);
-        }
-        ImGui::SliderFloat("Normal Coloring", &normal_coloring_strength_, 0.0f, 1.0f, "%.2f");
+        ImGui::SeparatorText("Flat Cartoon Style");
+        ImGui::SliderFloat("Binary Threshold", &binary_threshold_, 0.0f, 1.0f, "%.2f");
+        ImGui::Text("  Threshold for binary lighting (bright/dark)");
+        ImGui::SliderFloat("Shadow Ignore Threshold", &shadow_ignore_threshold_, 0.0f, 1.0f, "%.2f");
+        ImGui::Text("  NdotL threshold to ignore shadows");
+        ImGui::SliderFloat("Highlight Threshold", &highlight_threshold_, 0.0f, 1.0f, "%.2f");
+        ImGui::Text("  Threshold for flat highlight effect");
         
         ImGui::Spacing();
-        ImGui::SeparatorText("Color Bleeding");
-        ImGui::TextColored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "Color bleeding simulates");
-        ImGui::SliderFloat("Bleeding Strength", &color_bleeding_strength_, 0.0f, 5.0f, "%.2f");
-        ImGui::SliderFloat("Temperature Shift", &color_temperature_shift_, 0.0f, 5.0f, "%.2f");
-        ImGui::ColorEdit3("Shadow Tint", &shadow_tint_[0]);
-        ImGui::ColorEdit3("Highlight Tint", &highlight_tint_[0]);
-        ImGui::Checkbox("Complementary Colors", &use_complementary_colors_);
-        
-        ImGui::Spacing();
-        ImGui::SeparatorText("Anime Style Rendering (动漫风格)");
-        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.5f, 1.0f), "Ultra-vibrant anime colors");
-        ImGui::SliderFloat("Saturation Boost", &anime_saturation_boost_, 1.0f, 5.0f, "%.2f");
-        ImGui::SliderFloat("Hue Variation", &anime_hue_variation_, 0.0f, 1.0f, "%.2f");
-        ImGui::Checkbox("Rainbow Mapping", &use_rainbow_mapping_);
-        ImGui::SliderFloat("Texture Smoothing", &texture_smoothing_, 0.0f, 1.0f, "%.2f");
-        ImGui::SliderFloat("Roughness Floor", &roughness_floor_, 0.0f, 1.0f, "%.2f");
+        ImGui::SeparatorText("Saturation Boost");
+        ImGui::SliderFloat("Light Saturation", &saturation_boost_light_, 0.0f, 3.0f, "%.2f");
+        ImGui::Text("  Saturation boost for bright areas (1.0 = original)");
+        ImGui::SliderFloat("Shadow Saturation", &saturation_boost_shadow_, 0.0f, 3.0f, "%.2f");
+        ImGui::Text("  Saturation boost for dark areas (1.0 = original)");
     }
     
     ImGui::Spacing();
@@ -1482,22 +1463,11 @@ void Application::ExportFrame(const std::string& filename,
     render_settings.specular_hardness = specular_hardness_;
     render_settings.outline_width = outline_width_;
     render_settings.outline_threshold = outline_threshold_;
-    render_settings.hue_shift_strength = hue_shift_strength_;
-    render_settings.rim_power = rim_power_;
-    render_settings.rim_color = glm::vec3(rim_color_.x, rim_color_.y, rim_color_.z);
-    render_settings.normal_coloring_strength = normal_coloring_strength_;
-    render_settings.use_gradient_mapping = use_gradient_mapping_ ? 1 : 0;
-    render_settings.color_bleeding_strength = color_bleeding_strength_;
-    render_settings.color_temperature_shift = color_temperature_shift_;
-    render_settings.shadow_tint = glm::vec3(shadow_tint_.x, shadow_tint_.y, shadow_tint_.z);
-    render_settings.highlight_tint = glm::vec3(highlight_tint_.x, highlight_tint_.y, highlight_tint_.z);
-    render_settings.use_complementary_colors = use_complementary_colors_ ? 1 : 0;
-    // Anime style rendering
-    render_settings.anime_saturation_boost = anime_saturation_boost_;
-    render_settings.anime_hue_variation = anime_hue_variation_;
-    render_settings.texture_smoothing = texture_smoothing_;
-    render_settings.roughness_floor = roughness_floor_;
-    render_settings.use_rainbow_mapping = use_rainbow_mapping_ ? 1 : 0;
+    render_settings.binary_threshold = binary_threshold_;
+    render_settings.shadow_ignore_threshold = shadow_ignore_threshold_;
+    render_settings.highlight_threshold = highlight_threshold_;
+    render_settings.saturation_boost_light = saturation_boost_light_;
+    render_settings.saturation_boost_shadow = saturation_boost_shadow_;
     render_settings_buffer_->UploadData(&render_settings, sizeof(RenderSettings));
 
     // Resize render targets to requested resolution
