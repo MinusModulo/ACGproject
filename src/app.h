@@ -18,6 +18,8 @@ struct VolumeRegion {
     glm::vec3 max_p;
     float sigma_t;
     glm::vec3 sigma_s;
+    float pad_align;
+    glm::vec3 emission;  // Volumetric emission (Le)
     float pad1;
 };
 

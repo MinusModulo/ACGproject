@@ -55,7 +55,8 @@ bool SampleHomogeneousVolume(
     inout float3 throughput, 
     inout uint rng_state, 
     VolumeRegion vol, 
-    float hit_dist
+    float hit_dist,
+    inout float3 radiance
 ) {
     // Skip when extinction is not positive
     if (vol.sigma_t <= 0.0) {
@@ -86,6 +87,29 @@ bool SampleHomogeneousVolume(
     float3 sigma_t_vec = float3(vol.sigma_t, vol.sigma_t, vol.sigma_t);
     float3 albedo = vol.sigma_s / max(vol.sigma_t, 1e-6);
     
+    // 4. Accumulate volumetric emission
+    // Emission contribution = Le * (1 - exp(-sigma_t * L)) / sigma_t
+    // where L is the path length through the volume
+    float emission_length;
+    if (dist_sample < segment_length) {
+        // Scattering event inside the medium
+        // Emission path: from t_enter to t_enter + dist_sample
+        emission_length = dist_sample;
+    } else {
+        // No scattering before exiting the volume
+        // Emission path: from t_enter to t_exit (entire segment)
+        emission_length = segment_length;
+    }
+    
+    // Accumulate emission (handle sigma_t = 0 case)
+    if (vol.sigma_t > eps) {
+        float transmittance_factor = 1.0 - exp(-vol.sigma_t * emission_length);
+        radiance += throughput * vol.emission * transmittance_factor / vol.sigma_t;
+    } else {
+        // When sigma_t is very small, use linear approximation
+        radiance += throughput * vol.emission * emission_length;
+    }
+    
     if (dist_sample < segment_length) {
         // Scattering event inside the medium
         // PDF of this distance is sigma_t * exp(-sigma_t * dist)
@@ -112,7 +136,8 @@ bool SampleInhomogeneousVolume(
     inout float3 throughput,
     inout uint rng_state,
     VolumeRegion vol,
-    float hit_dist
+    float hit_dist,
+    inout float3 radiance
 ) {
     float sigma_t_max = vol.sigma_t;
     if (sigma_t_max <= 0.0) {
@@ -143,12 +168,25 @@ bool SampleInhomogeneousVolume(
 
         // If we exit before the next potential event, we made it through safely
         if (t >= t_exit) {
+            // Accumulate emission for the remaining segment (from previous t to t_exit)
+            // Use the density at a point between previous position and t_exit
+            float t_mid = (t - dist + t_exit) * 0.5;
+            float3 pos_mid = ray.Origin + ray.Direction * t_mid;
+            float density_mid = DensityAtPoint(pos_mid, vol);
+            float remaining_dist = t_exit - (t - dist);
+            radiance += throughput * vol.emission * density_mid * remaining_dist;
             return false;
         }
 
         float3 pos = ray.Origin + ray.Direction * t;
         float density = DensityAtPoint(pos, vol);
         float sigma_t_local = density * sigma_t_max;
+
+        // Accumulate volumetric emission for this free-flight segment
+        // Emission contribution = throughput * Le * density * dist
+        // Note: In Delta Tracking, transmittance is handled probabilistically,
+        // so we directly integrate using the free-flight distance
+        radiance += throughput * vol.emission * density * dist;
 
         // Null-collision check
         // Probability of real collision: P = sigma_t_local / sigma_t_max

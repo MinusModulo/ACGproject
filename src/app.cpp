@@ -663,12 +663,15 @@ void Application::OnInit() {
     // Create volume info buffer
     core_->CreateBuffer(sizeof(VolumeRegion), grassland::graphics::BUFFER_TYPE_DYNAMIC, &volume_info_buffer_);
 
-    // Homogeneous test volume (disabled)
-    // VolumeRegion homogeneous_volume{};
-    // homogeneous_volume.min_p = glm::vec3(-1.0f, 0.0f, -1.0f);
-    // homogeneous_volume.max_p = glm::vec3(1.0f, 2.0f, 1.0f);
-    // homogeneous_volume.sigma_t = 0.8f;
-    // homogeneous_volume.sigma_s = glm::vec3(0.72f, 0.72f, 0.72f);
+    // Homogeneous test volume with purple emission
+    VolumeRegion homogeneous_volume{};
+    // Center at (-0.2, 1.15, 0.2), size 0.5 × 0.5 × 0.5
+    homogeneous_volume.min_p = glm::vec3(-0.45f, 0.9f, -0.05f);
+    homogeneous_volume.max_p = glm::vec3(0.05f, 1.4f, 0.45f);
+    homogeneous_volume.sigma_t = 0.1f;  // Lower density for better visibility
+    homogeneous_volume.sigma_s = glm::vec3(0.2f, 0.2f, 0.2f);  // Low scattering
+    homogeneous_volume.emission = glm::vec3(2.0f, 0.0f, 2.0f); // Purple volumetric emission (Le)
+    volume_info_buffer_->UploadData(&homogeneous_volume, sizeof(VolumeRegion));
 
     // Inhomogeneous volume instance (majorant sigma_t used by ratio tracking)
     /*
@@ -677,6 +680,7 @@ void Application::OnInit() {
     inhom_volume.max_p = glm::vec3(2.0f, 2.5f, 2.0f);
     inhom_volume.sigma_t = 0.8f;                     // lower density for brighter fog
     inhom_volume.sigma_s = glm::vec3(0.72f, 0.70f, 0.68f); // near-white, high albedo
+    inhom_volume.emission = glm::vec3(0.0f, 0.0f, 0.0f); // Volumetric emission (Le)
     volume_info_buffer_->UploadData(&inhom_volume, sizeof(VolumeRegion));
 */
     // Create skybox enable buffer

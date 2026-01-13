@@ -170,17 +170,18 @@ float3 apply_saturation_boost(float3 color, float light_boost, float shadow_boos
     vol.max_p = volume_info.max_p;
     vol.sigma_t = volume_info.sigma_t;
     vol.sigma_s = volume_info.sigma_s;
+    vol.emission = volume_info.emission;
     vol.pad0 = 0;
     vol.pad1 = 0;
 
-    if (SampleInhomogeneousVolume(ray, throughput, rng_state, vol, hit_dist)) {
+    if (SampleInhomogeneousVolume(ray, throughput, rng_state, vol, hit_dist, radiance)) {
       depth++;
       payload.rng_state = rng_state;
       continue;
     }
 
     // Optional fallback to homogeneous sampling if needed
-    if (SampleHomogeneousVolume(ray, throughput, rng_state, vol, hit_dist)) {
+    if (SampleHomogeneousVolume(ray, throughput, rng_state, vol, hit_dist, radiance)) {
         depth++;
         payload.rng_state = rng_state;
         continue;
