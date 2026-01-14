@@ -667,22 +667,25 @@ void Application::OnInit() {
     volume_info_buffer_->UploadData(&volume_region, sizeof(VolumeRegion));
 
     // Homogeneous test volume (disabled)
+    
     // VolumeRegion homogeneous_volume{};
-    // homogeneous_volume.min_p = glm::vec3(-1.0f, 0.0f, -1.0f);
-    // homogeneous_volume.max_p = glm::vec3(1.0f, 2.0f, 1.0f);
-    // homogeneous_volume.sigma_t = 0.8f;
-    // homogeneous_volume.sigma_s = glm::vec3(0.72f, 0.72f, 0.72f);
+    // homogeneous_volume.min_p = glm::vec3(-0.45f, 0.9f, -0.05f);
+    // homogeneous_volume.max_p = glm::vec3(0.05f, 1.4f, 0.45f);
+    // homogeneous_volume.sigma_t = 0.1f;  // Lower density for better visibility
+    // homogeneous_volume.sigma_s = glm::vec3(0.2f, 0.2f, 0.2f);  // Low scattering
+    // homogeneous_volume.emission = glm::vec3(2.0f, 0.0f, 2.0f); // Purple volumetric emission (Le)
     // homogeneous_volume.g = 0.0f;
+    // volume_info_buffer_->UploadData(&homogeneous_volume, sizeof(VolumeRegion));
 
     // Inhomogeneous volume instance (majorant sigma_t used by ratio tracking)
     
-    VolumeRegion inhom_volume{};
-    inhom_volume.min_p = glm::vec3(-2.0f, -2.0f, -2.0f);
-    inhom_volume.max_p = glm::vec3(4.0f, 4.0f, 4.0f);
-    inhom_volume.sigma_t = 0.05f;                     // Much thinner density for God Rays
-    inhom_volume.sigma_s = glm::vec3(0.02f);          // Moderate albedo to prevent washout
-    inhom_volume.g = 0.95f;                          // Strong forward scattering for shafts
-    volume_info_buffer_->UploadData(&inhom_volume, sizeof(VolumeRegion));
+    // VolumeRegion inhom_volume{};
+    // inhom_volume.min_p = glm::vec3(-2.0f, -2.0f, -2.0f);
+    // inhom_volume.max_p = glm::vec3(4.0f, 4.0f, 4.0f);
+    // inhom_volume.sigma_t = 0.05f;                     // Much thinner density for God Rays
+    // inhom_volume.sigma_s = glm::vec3(0.02f);          // Moderate albedo to prevent washout
+    // inhom_volume.g = 0.95f;                          // Strong forward scattering for shafts
+    // volume_info_buffer_->UploadData(&inhom_volume, sizeof(VolumeRegion));
 
     // Create skybox enable buffer
     core_->CreateBuffer(sizeof(SkyInfo), grassland::graphics::BUFFER_TYPE_DYNAMIC, &sky_info_buffer_);
