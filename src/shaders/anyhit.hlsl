@@ -72,8 +72,7 @@ void AnyHitMain(inout RayPayload payload, in BuiltInTriangleIntersectionAttribut
         // Stochastic transparency
         uint rng_state = payload.rng_state;
         
-        // If the payload rng_state is uninitialized (0), we might get artifacts. 
-        // Ideally it should be passed correctly from CastShadowRay.
+        // RNG state is passed from CastShadowRay
         
         if (rand(rng_state) > alpha) {
             IgnoreHit();
