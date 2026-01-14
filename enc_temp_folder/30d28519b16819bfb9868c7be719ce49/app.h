@@ -7,11 +7,9 @@
 struct CameraObject {
     glm::mat4 screen_to_camera;
     glm::mat4 camera_to_world;
-    glm::mat4 prev_camera_to_world;
     float aperture;
     float focus_distance;
-    float shutter_speed;
-    int enable_motion_blur;
+    glm::vec2 padding;
 };
 
 struct VolumeRegion {
@@ -20,9 +18,7 @@ struct VolumeRegion {
     glm::vec3 max_p;
     float sigma_t;
     glm::vec3 sigma_s;
-    float pad_align;
-    glm::vec3 emission;  // Volumetric emission (Le)
-    float pad1;
+    float g; // Henyey-Greenstein anisotropy parameter
 };
 
 struct SkyInfo {
@@ -35,18 +31,7 @@ struct SkyInfo {
 struct RenderSettings {
     int max_bounces;
     float exposure;
-    int cartoon_enabled;
-    float diffuse_bands;
-    float specular_hardness;
-    float outline_width;
-    float outline_threshold;
-    // Flat cartoon style parameters
-    float binary_threshold;
-    float shadow_ignore_threshold;
-    float highlight_threshold;
-    // Saturation boost parameters
-    float saturation_boost_light;
-    float saturation_boost_shadow;
+    float padding[2];
 };
 
 class Application {
@@ -103,7 +88,6 @@ private:
     std::unique_ptr<grassland::graphics::Shader> raygen_shader_;
     std::unique_ptr<grassland::graphics::Shader> miss_shader_;
     std::unique_ptr<grassland::graphics::Shader> closest_hit_shader_;
-    std::unique_ptr<grassland::graphics::Shader> anyhit_shader_;
 
     // Rendering
     std::unique_ptr<grassland::graphics::Image> color_image_;
@@ -159,25 +143,4 @@ private:
     float exposure_ = 1.0f;
     float env_intensity_ = 1.0f;
     float bg_intensity_ = 1.0f;
-    
-    // Cartoon style controls
-    bool cartoon_enabled_ = false;
-    float diffuse_bands_ = 8.0f;  // Higher default to preserve colors better
-    float specular_hardness_ = 0.3f;  // Lower default to preserve highlights
-    float outline_width_ = 0.02f;  // Narrower default to reduce over-outlining
-    float outline_threshold_ = 0.85f;  // Higher default to only outline true edges
-    
-    // Flat cartoon style controls
-    float binary_threshold_ = 0.5f;  // Threshold for binary lighting (0.0-1.0)
-    float shadow_ignore_threshold_ = 0.7f;  // NdotL threshold to ignore shadows
-    float highlight_threshold_ = 0.8f;  // Threshold for flat highlight effect
-    
-    // Saturation boost controls
-    float saturation_boost_light_ = 1.5f;  // Saturation boost for bright areas
-    float saturation_boost_shadow_ = 1.2f;  // Saturation boost for dark areas
-    // Motion Blur
-    bool motion_blur_enabled_{ false };
-    float shutter_speed_{ 0.5f };
-    glm::mat4 prev_camera_to_world_{ 1.0f };
-    glm::mat4 current_camera_to_world_{ 1.0f };
 };

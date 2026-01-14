@@ -762,9 +762,13 @@ void Application::OnInit() {
     core_->CreateShader(shader_vfs, "shaders/shader.hlsl", "RayGenMain", "lib_6_3", &raygen_shader_);
     core_->CreateShader(shader_vfs, "shaders/shader.hlsl", "MissMain", "lib_6_3", &miss_shader_);
     core_->CreateShader(shader_vfs, "shaders/shader.hlsl", "ClosestHitMain", "lib_6_3", &closest_hit_shader_);
+    core_->CreateShader(shader_vfs, "shaders/anyhit.hlsl", "AnyHitMain", "lib_6_3", &anyhit_shader_);
     grassland::LogInfo("Shader compiled successfully");
 
-    core_->CreateRayTracingProgram(raygen_shader_.get(), miss_shader_.get(), closest_hit_shader_.get(), &program_);
+    core_->CreateRayTracingProgram(&program_);
+    program_->AddRayGenShader(raygen_shader_.get());
+    program_->AddMissShader(miss_shader_.get());
+    program_->AddHitGroup(closest_hit_shader_.get(), anyhit_shader_.get());
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_ACCELERATION_STRUCTURE, 1);  // space0
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_WRITABLE_IMAGE, 1);          // space1 - color output
     program_->AddResourceBinding(grassland::graphics::RESOURCE_TYPE_UNIFORM_BUFFER, 1);          // space2
@@ -800,6 +804,7 @@ void Application::OnClose() {
     raygen_shader_.reset();
     miss_shader_.reset();
     closest_hit_shader_.reset();
+    anyhit_shader_.reset();
 
     scene_.reset();
     film_.reset();
