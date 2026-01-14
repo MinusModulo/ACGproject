@@ -4,6 +4,8 @@
 #include "common.hlsl"
 #include "sampling.hlsl"
 #include "rng.hlsl"
+#include "light_sampling.hlsl"
+#include "shadow.hlsl"
 
 // Ray-AABB intersection with safe division for zero direction components
 bool IntersectAABB(RayDesc ray, float3 min_p, float3 max_p, out float t_enter, out float t_exit) {
@@ -33,6 +35,76 @@ float Noise3(float3 p) {
     return frac(sin(n) * 43758.5453);
 }
 
+// Sample Henyey-Greenstein Phase Function
+float3 sample_HG(float3 w, float g, float u1, float u2) {
+    float cos_theta;
+    if (abs(g) < 1e-3) {
+        cos_theta = 1.0 - 2.0 * u1;
+    } else {
+        float sqr_term = (1.0 - g * g) / (1.0 - g + 2.0 * g * u1);
+        cos_theta = (1.0 + g * g - sqr_term * sqr_term) / (2.0 * g);
+    }
+    
+    float sin_theta = sqrt(max(0.0, 1.0 - cos_theta * cos_theta));
+    float phi = 2.0 * PI * u2;
+    
+    float3 b1, b2;
+    float3 n = w;
+    if (abs(n.x) > 0.1) {
+        b1 = normalize(cross(float3(0, 1, 0), n));
+    } else {
+        b1 = normalize(cross(float3(1, 0, 0), n));
+    }
+    b2 = cross(n, b1);
+    
+    return sin_theta * cos(phi) * b1 + sin_theta * sin(phi) * b2 + cos_theta * n;
+}
+
+float phase_HG(float cos_theta, float g) {
+    float gg = g * g;
+    float denom = pow(max(1.0 + gg - 2.0 * g * cos_theta, 1e-6), 1.5);
+    return (1.0 - gg) / (4.0 * PI * denom);
+}
+
+float3 EvaluateVolumeDirectLighting(float3 position, float3 wo, float g, inout uint rng_state) {
+    float3 Ld = 0.0;
+    for (uint i = 0; i < hover_info.light_count; ++i) {
+        Light light = Lights[i];
+
+        float3 light_dir = 0.0;
+        float3 radiance_light = 0.0;
+        float inv_pdf = 1.0;
+        float pdf = 1.0;
+        float max_distance = 1e9;
+        float3 sampled_point = 0.0;
+
+        if (light.type == 0) {
+            radiance_light = SamplePointLight(light, position, light_dir, inv_pdf);
+            pdf = 1.0;
+            max_distance = length(light.position - position);
+        } else if (light.type == 2) {
+            radiance_light = SampleSunLight(light, light_dir, inv_pdf, rng_state);
+            pdf = 1.0 / max(inv_pdf, eps);
+            max_distance = 1e9;
+        } else if (light.type == 1) {
+            radiance_light = SampleAreaLight(light, position, light_dir, inv_pdf, sampled_point, rng_state);
+            pdf = 1.0 / max(inv_pdf, eps);
+            max_distance = length(sampled_point - position);
+        }
+
+        if (pdf <= 0.0) {
+            continue;
+        }
+
+        // Visibility to the light (hard shadows from geometry)
+        if (!CastShadowRay(position + light_dir * 1e-3, light_dir, max_distance - 2e-3, rng_state)) {
+            float phase = phase_HG(dot(light_dir, -wo), g);
+            Ld += radiance_light * phase / pdf;
+        }
+    }
+    return Ld;
+}
+
 // Procedural density in [0, 1] inside the volume
 float DensityAtPoint(float3 p, VolumeRegion vol) {
     float3 size = vol.max_p - vol.min_p;
@@ -40,12 +112,14 @@ float DensityAtPoint(float3 p, VolumeRegion vol) {
     size = max(size, float3(1e-3, 1e-3, 1e-3));
     float3 local = saturate((p - vol.min_p) / size);
 
-    // Base gradient (denser near the ground, linearly decays along +Y)
+    // Uniform-ish dust for god rays, slightly denser at bottom
     float base = 1.0 - local.z;
-    base = lerp(0.05, 0.3, base); // keep a floor to avoid zero density aloft
-    float wavy = lerp(0.6, 1.0, Noise3(p * 1.7));
-    float stripes = 0.5 + 0.5 * sin(dot(p, float3(0.8, 1.3, 0.6)));
-    return saturate(base * wavy * stripes);
+    base = lerp(0.01, 0.1, base); // Very sparse dust
+
+    // Subtle noise modulation to break uniformity slightly without "clumping"
+    float noise = 0.8 + 0.4 * Noise3(p * 2.0); 
+    
+    return saturate(base * noise);
 }
 
 // Sample homogeneous volume
@@ -116,8 +190,11 @@ bool SampleHomogeneousVolume(
         // Transmittance is exp(-sigma_t * dist)
         // Weight = (Trans * sigma_s) / PDF = sigma_s / sigma_t = albedo
         throughput *= albedo;
+        // Single-scatter direct lighting with shadow ray visibility
+        float3 Ld = EvaluateVolumeDirectLighting(ray.Origin + ray.Direction * (t_enter + dist_sample), -ray.Direction, vol.g, rng_state);
+        radiance += throughput * Ld;
         ray.Origin = ray.Origin + ray.Direction * (t_enter + dist_sample);
-        ray.Direction = sample_uniform_sphere(rand(rng_state), rand(rng_state));
+        ray.Direction = sample_HG(ray.Direction, vol.g, rand(rng_state), rand(rng_state));
         ray.TMin = 1e-3;
         return true;
     }
@@ -194,8 +271,10 @@ bool SampleInhomogeneousVolume(
             // Real collision
             // Weight = albedo (same logic as homogeneous)
             throughput *= albedo;
+            float3 Ld = EvaluateVolumeDirectLighting(pos, -ray.Direction, vol.g, rng_state);
+            radiance += throughput * Ld;
             ray.Origin = pos;
-            ray.Direction = sample_uniform_sphere(rand(rng_state), rand(rng_state));
+            ray.Direction = sample_HG(ray.Direction, vol.g, rand(rng_state), rand(rng_state));
             ray.TMin = 1e-3;
             return true;
         }

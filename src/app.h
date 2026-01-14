@@ -22,7 +22,7 @@ struct VolumeRegion {
     glm::vec3 sigma_s;
     float pad_align;
     glm::vec3 emission;  // Volumetric emission (Le)
-    float pad1;
+    float g; // Henyey-Greenstein anisotropy parameter
 };
 
 struct SkyInfo {

@@ -125,7 +125,7 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 geometr
     // Conditional shadow ignoring: skip shadow check if NdotL exceeds threshold
     bool should_ignore_shadow = (render_settings.cartoon_enabled == 1) && 
                                 (NdotL_light > render_settings.shadow_ignore_threshold);
-    bool is_lit = should_ignore_shadow || !CastShadowRay(position + geometric_normal * 1e-3, light_dir, max_distance - 1e-3);
+    bool is_lit = should_ignore_shadow || !CastShadowRay(position + geometric_normal * 1e-3, light_dir, max_distance - 1e-3, rng_state);
     
     if (is_lit) {
       if (render_settings.cartoon_enabled == 1) {
@@ -254,7 +254,7 @@ float3 EvaluateLight(Light light, float3 position, float3 normal, float3 geometr
       // Conditional shadow ignoring for BRDF sampling
       bool should_ignore_shadow_brdf = (render_settings.cartoon_enabled == 1) && 
                                        (NdotL_brdf > render_settings.shadow_ignore_threshold);
-      bool is_lit_brdf = should_ignore_shadow_brdf || !CastShadowRay(position + geometric_normal * 1e-3, brdf_dir, dist_to_light - 1e-3);
+      bool is_lit_brdf = should_ignore_shadow_brdf || !CastShadowRay(position + geometric_normal * 1e-3, brdf_dir, dist_to_light - 1e-3, rng_state);
       
       if (is_lit_brdf) {
         float safe_roughness = max(roughness, 0.15);
@@ -403,7 +403,7 @@ float3 EvaluateLightMultiLayer(
         // Conditional shadow ignoring for multi-layer materials
         bool should_ignore_shadow_ml = (render_settings.cartoon_enabled == 1) && 
                                        (NdotL_light > render_settings.shadow_ignore_threshold);
-        bool is_lit_ml = should_ignore_shadow_ml || !CastShadowRay(position + geometric_normal * 1e-3, light_dir, max_distance - 1e-3);
+        bool is_lit_ml = should_ignore_shadow_ml || !CastShadowRay(position + geometric_normal * 1e-3, light_dir, max_distance - 1e-3, rng_state);
         
         if (is_lit_ml) {
             if (render_settings.cartoon_enabled == 1) {
@@ -517,7 +517,7 @@ float3 EvaluateLightMultiLayer(
             // Conditional shadow ignoring for multi-layer BRDF sampling
             bool should_ignore_shadow_brdf_ml = (render_settings.cartoon_enabled == 1) && 
                                                  (NdotL_brdf > render_settings.shadow_ignore_threshold);
-            bool is_lit_brdf_ml = should_ignore_shadow_brdf_ml || !CastShadowRay(position + geometric_normal * 1e-3, brdf_dir, dist_to_light - 1e-3);
+            bool is_lit_brdf_ml = should_ignore_shadow_brdf_ml || !CastShadowRay(position + geometric_normal * 1e-3, brdf_dir, dist_to_light - 1e-3, rng_state);
             
             if (is_lit_brdf_ml) {
                 float safe_roughness_layer1 = max(roughness_layer1, 0.15);

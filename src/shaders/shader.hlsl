@@ -92,22 +92,14 @@ float3 apply_saturation_boost(float3 color, float light_boost, float shadow_boos
   float2 uv = pixel_center / float2(DispatchRaysDimensions().xy);
   uv.y = 1.0 - uv.y;
   float2 d = uv * 2.0 - 1.0;
-  
-  float4x4 cam_to_world = camera_info.camera_to_world;
-  if (camera_info.enable_motion_blur) {
-    float t = rand(rng_state);
-    float time_factor = t * camera_info.shutter_speed;
-    cam_to_world = (1.0 - time_factor) * camera_info.camera_to_world + time_factor * camera_info.prev_camera_to_world;
-  }
-
-  float4 origin = mul(cam_to_world, float4(0, 0, 0, 1));
+  float4 origin = mul(camera_info.camera_to_world, float4(0, 0, 0, 1));
   float4 target = mul(camera_info.screen_to_camera, float4(d, 1, 1));
-  float4 direction = mul(cam_to_world, float4(target.xyz, 0));
+  float4 direction = mul(camera_info.camera_to_world, float4(target.xyz, 0));
 
   // Thin-lens camera: sample aperture to get depth of field
-  float3 cam_forward = normalize(mul(cam_to_world, float4(0, 0, -1, 0)).xyz);
-  float3 cam_right = normalize(mul(cam_to_world, float4(1, 0, 0, 0)).xyz);
-  float3 cam_up = normalize(mul(cam_to_world, float4(0, 1, 0, 0)).xyz);
+  float3 cam_forward = normalize(mul(camera_info.camera_to_world, float4(0, 0, -1, 0)).xyz);
+  float3 cam_right = normalize(mul(camera_info.camera_to_world, float4(1, 0, 0, 0)).xyz);
+  float3 cam_up = normalize(mul(camera_info.camera_to_world, float4(0, 1, 0, 0)).xyz);
 
   float3 primary_dir = normalize(direction.xyz);
   float3 ray_origin = origin.xyz;
@@ -180,7 +172,7 @@ float3 apply_saturation_boost(float3 color, float light_boost, float shadow_boos
     vol.sigma_s = volume_info.sigma_s;
     vol.emission = volume_info.emission;
     vol.pad0 = 0;
-    vol.pad1 = 0;
+    vol.g = volume_info.g;
 
     if (SampleInhomogeneousVolume(ray, throughput, rng_state, vol, hit_dist, radiance)) {
       depth++;
