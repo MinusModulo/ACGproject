@@ -1,7 +1,3 @@
-# Notice
-
-Some of the implementation by Mingyu Wang are in the branch "my_branch". So you can check out to "my_branch" for them.
-
 # ShortMarch
 
 ## Description
